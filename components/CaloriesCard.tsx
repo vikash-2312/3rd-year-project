@@ -1,12 +1,18 @@
 import { AvocadoIcon, BeefIcon, Bread01Icon, PencilEdit02Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
-import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useUser } from '@clerk/expo';
+import { doc, updateDoc } from 'firebase/firestore';
+import React, { useState } from 'react';
+import { Alert, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { db } from '../lib/firebase';
+import { Button } from './Button'; // Assuming you have a Button component
 import { SegmentedHalfCircleProgress30 } from './Halfprogress'; // Adjust path if needed
 
 type CaloriesCardProps = {
-  // We can add props here later (e.g., target, consumed)
-  // For now, these are static as per the plan
+  targetCalories: number;
+  targetProtein: number;
+  targetCarbs: number;
+  targetFats: number;
   remaining: number;
   progress: number; // 0 to 1
   protein: number;
@@ -14,7 +20,58 @@ type CaloriesCardProps = {
   fats: number;
 };
 
-export function CaloriesCard({ remaining, progress, protein, carbs, fats }: CaloriesCardProps) {
+export function CaloriesCard({ 
+  targetCalories, targetProtein, targetCarbs, targetFats,
+  remaining, progress, protein, carbs, fats 
+}: CaloriesCardProps) {
+  const { user } = useUser();
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // Local state for editing
+  const [editCalories, setEditCalories] = useState(targetCalories.toString());
+  const [editProtein, setEditProtein] = useState(targetProtein.toString());
+  const [editCarbs, setEditCarbs] = useState(targetCarbs.toString());
+  const [editFats, setEditFats] = useState(targetFats.toString());
+
+  const openEditModal = () => {
+    setEditCalories(targetCalories.toString());
+    setEditProtein(targetProtein.toString());
+    setEditCarbs(targetCarbs.toString());
+    setEditFats(targetFats.toString());
+    setIsModalVisible(true);
+  };
+
+  const handleSave = async () => {
+    if (!user) return;
+    setIsSaving(true);
+    
+    try {
+      const userRef = doc(db, 'users', user.id);
+      
+      const newMacros = {
+        dailyCalories: parseInt(editCalories) || 0,
+        proteinGrams: parseInt(editProtein) || 0,
+        carbsGrams: parseInt(editCarbs) || 0,
+        fatsGrams: parseInt(editFats) || 0,
+      };
+
+      // update specifically the macros sub-object
+      await updateDoc(userRef, {
+        'profile.macros.dailyCalories': newMacros.dailyCalories,
+        'profile.macros.proteinGrams': newMacros.proteinGrams,
+        'profile.macros.carbsGrams': newMacros.carbsGrams,
+        'profile.macros.fatsGrams': newMacros.fatsGrams,
+      });
+
+      setIsModalVisible(false);
+    } catch (error) {
+      console.error('Error updating macros:', error);
+      Alert.alert('Error', 'Failed to save changes. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
   return (
     <View style={styles.cardContainer}>
       {/* Header Row */}
@@ -23,8 +80,8 @@ export function CaloriesCard({ remaining, progress, protein, carbs, fats }: Calo
           {/* <FireIcon size={20} color="#FF6B6B" variant="solid" style={styles.iconSpaced} /> */}
           <Text style={styles.titleText}>Calories</Text>
         </View>
-        <TouchableOpacity style={styles.editButton} activeOpacity={0.7}>
-          <HugeiconsIcon icon={PencilEdit02Icon} size={20} color="#A0AEC0" />
+        <TouchableOpacity style={styles.editButton} activeOpacity={0.7} onPress={openEditModal}>
+          <HugeiconsIcon icon={PencilEdit02Icon} size={20} color="#009050" />
         </TouchableOpacity>
       </View>
 
@@ -70,6 +127,71 @@ export function CaloriesCard({ remaining, progress, protein, carbs, fats }: Calo
           </View>
         </View>
       </View>
+
+      {/* Edit Macros Modal */}
+      <Modal visible={isModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Daily Targets</Text>
+            
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Daily Calories (kcal)</Text>
+              <TextInput 
+                style={styles.textInput} 
+                keyboardType="number-pad"
+                value={editCalories}
+                onChangeText={setEditCalories}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Protein (g)</Text>
+              <TextInput 
+                style={styles.textInput} 
+                keyboardType="number-pad"
+                value={editProtein}
+                onChangeText={setEditProtein}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Carbs (g)</Text>
+              <TextInput 
+                style={styles.textInput} 
+                keyboardType="number-pad"
+                value={editCarbs}
+                onChangeText={setEditCarbs}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Fats (g)</Text>
+              <TextInput 
+                style={styles.textInput} 
+                keyboardType="number-pad"
+                value={editFats}
+                onChangeText={setEditFats}
+              />
+            </View>
+
+            <View style={styles.modalButtons}>
+              <Button 
+                title="Cancel" 
+                variant="outline" 
+                style={{ flex: 1, marginRight: 8 }} 
+                onPress={() => setIsModalVisible(false)} 
+                disabled={isSaving}
+              />
+              <Button 
+                title={isSaving ? "Saving..." : "Save"} 
+                style={{ flex: 1, marginLeft: 8 }} 
+                onPress={handleSave} 
+                disabled={isSaving}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -148,4 +270,45 @@ const styles = StyleSheet.create({
   fatsBlock: {
     backgroundColor: '#E6FFFA', // Light teal
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2D3748',
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4A5568',
+    marginBottom: 8,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#2D3748',
+    backgroundColor: '#F7FAFC',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    marginTop: 24,
+  }
 });

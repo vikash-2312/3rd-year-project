@@ -1,14 +1,14 @@
 import { useAuth, useUser } from "@clerk/expo";
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ScrollView, StyleSheet, Text, View, ActivityIndicator } from "react-native";
+import { collection, doc, getDoc, limit, onSnapshot, query, where } from "firebase/firestore";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../../components/Button";
-import { HomeHeader } from "../../components/HomeHeader";
-import { WeeklyCalendar } from "../../components/WeeklyCalendar";
 import { CaloriesCard } from "../../components/CaloriesCard";
+import { HomeHeader } from "../../components/HomeHeader";
 import { RecentActivity } from "../../components/RecentActivity";
-import { useEffect, useState } from "react";
-import { collection, doc, getDoc, onSnapshot, query, where, orderBy, limit } from "firebase/firestore";
+import { WaterCard } from "../../components/WaterCard";
+import { WeeklyCalendar } from "../../components/WeeklyCalendar";
 import { db } from "../../lib/firebase";
 
 export default function Home() {
@@ -35,7 +35,7 @@ export default function Home() {
         setIsLoadingProps(false);
       }
     };
-    
+
     fetchUserData();
 
     // Listen for logs for the user (completely simple query to avoid index requirement)
@@ -44,7 +44,7 @@ export default function Home() {
       collection(db, 'logs'),
       where('userId', '==', user.id),
       // orderBy removed to avoid ANY index requirement during development
-      limit(50) 
+      limit(50)
     );
 
     const unsubscribe = onSnapshot(logsQuery, (snapshot) => {
@@ -59,7 +59,8 @@ export default function Home() {
           protein: data.protein,
           carbs: data.carbs,
           fat: data.fat,
-          time: data.timestamp?.toDate() 
+          waterLiters: data.waterLiters,
+          time: data.timestamp?.toDate()
             ? data.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             : 'Just now'
         };
@@ -74,7 +75,7 @@ export default function Home() {
           return timeB - timeA;
         })
         .slice(0, 5);
-        
+
       setLogs(dailyLogs);
     }, (error) => {
       console.error("Firestore Snapshot Error:", error);
@@ -89,14 +90,18 @@ export default function Home() {
     protein: acc.protein + (log.protein || 0),
     carbs: acc.carbs + (log.carbs || 0),
     fats: acc.fats + (log.fat || 0),
-  }), { calories: 0, protein: 0, carbs: 0, fats: 0 });
+    water: acc.water + (log.waterLiters || 0),
+  }), { calories: 0, protein: 0, carbs: 0, fats: 0, water: 0 });
 
   // Safely extract target macro values
   const targets = userData?.profile?.macros || {};
   const dailyCalories = targets.dailyCalories || 2000;
-  
+  const targetWaterLiters = targets.waterIntakeLiters || 2.5;
+
   const remainingCalories = Math.max(0, dailyCalories - consumedMacros.calories);
   const progress = dailyCalories > 0 ? consumedMacros.calories / dailyCalories : 0;
+
+  const consumedWaterLiters = consumedMacros.water;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -107,23 +112,33 @@ export default function Home() {
         {isLoadingProps ? (
           <ActivityIndicator size="large" color="#009050" style={{ marginVertical: 40 }} />
         ) : (
-          <CaloriesCard 
-            remaining={remainingCalories} 
-            progress={progress} 
-            protein={Math.round(consumedMacros.protein)} 
-            carbs={Math.round(consumedMacros.carbs)} 
-            fats={Math.round(consumedMacros.fats)} 
-          />
+          <>
+            <CaloriesCard
+              targetCalories={dailyCalories}
+              targetProtein={targets.proteinGrams || 150}
+              targetCarbs={targets.carbsGrams || 200}
+              targetFats={targets.fatsGrams || 60}
+              remaining={remainingCalories}
+              progress={progress}
+              protein={Math.round(consumedMacros.protein)}
+              carbs={Math.round(consumedMacros.carbs)}
+              fats={Math.round(consumedMacros.fats)}
+            />
+            <WaterCard
+              targetLiters={targetWaterLiters}
+              consumedLiters={consumedWaterLiters}
+            />
+          </>
         )}
 
         <RecentActivity activities={logs} />
 
         <View style={styles.testSection}>
-          <Text style={styles.title}>Welcome Home!</Text>
+          {/* <Text style={styles.title}>Welcome Home!</Text>
           <Text style={styles.subtitle}>
             {user?.fullName ? `Hello, ${user.fullName}!` : "You are successfully authenticated."}
-          </Text>
-
+          </Text> */}
+          {/* 
           <Button
             title="Reset Onboarding (Debug)"
             variant="outline"
@@ -139,7 +154,7 @@ export default function Home() {
               await AsyncStorage.removeItem('onboarding_height_in');
               alert('Cleared! Quit the app to re-onboard');
             }}
-          />
+          /> */}
 
           <Button
             title="Sign Out"

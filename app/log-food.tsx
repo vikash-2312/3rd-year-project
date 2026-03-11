@@ -38,22 +38,22 @@ export default function LogFoodScreen() {
   const initialUnit = parseInitialUnit((params.serving as string) || 'serving');
 
   // We store the "Base" values (per 1 unit of quantity) so we can scale accurately
-  const [baseCalories] = useState(parseFloat(params.calories as string) / initialQty || 0);
-  const [baseProtein] = useState(parseFloat(params.protein as string) / initialQty || 0);
-  const [baseCarbs] = useState(parseFloat(params.carbs as string) / initialQty || 0);
-  const [baseFat] = useState(parseFloat(params.fat as string) / initialQty || 0);
+  const [baseCalories] = useState(parseFloat((params.calories || params.aiCalories) as string) / initialQty || 0);
+  const [baseProtein] = useState(parseFloat((params.protein || params.aiProtein) as string) / initialQty || 0);
+  const [baseCarbs] = useState(parseFloat((params.carbs || params.aiCarbs) as string) / initialQty || 0);
+  const [baseFat] = useState(parseFloat((params.fat || params.aiFat) as string) / initialQty || 0);
 
   // States
-  const [foodName] = useState((params.foodName as string) || 'Selected Food');
+  const [foodName] = useState((params.foodName || params.aiName) as string || 'Selected Food');
   const [brandName] = useState((params.brandName as string) || '');
   
   const [quantity, setQuantity] = useState(initialQty.toString());
   const [unit, setUnit] = useState(initialUnit);
 
-  const [calories, setCalories] = useState((params.calories as string) || '0');
-  const [protein, setProtein] = useState((params.protein as string) || '0');
-  const [carbs, setCarbs] = useState((params.carbs as string) || '0');
-  const [fat, setFat] = useState((params.fat as string) || '0');
+  const [calories, setCalories] = useState((params.calories || params.aiCalories) as string || '0');
+  const [protein, setProtein] = useState((params.protein || params.aiProtein) as string || '0');
+  const [carbs, setCarbs] = useState((params.carbs || params.aiCarbs) as string || '0');
+  const [fat, setFat] = useState((params.fat || params.aiFat) as string || '0');
 
   const [isLogging, setIsLogging] = useState(false);
 

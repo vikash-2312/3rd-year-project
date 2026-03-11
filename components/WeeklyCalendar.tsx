@@ -156,14 +156,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#EDF2F7',
     backgroundColor: '#FFFFFF',
-    marginRight: 0, // Fallback if gap isn't supported, handled by item layout essentially
+    marginRight: 0,
   },
   dayContainerSelected: {
-    borderColor: '#009050',
-    backgroundColor: '#F0FDF4', // Very light green background
+    // Container itself doesn't change
   },
   dayContainerToday: {
-    borderColor: '#CBD5E0',
   },
   dayName: {
     fontSize: 10,
@@ -186,6 +184,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'transparent',
+    flexShrink: 0,      // Prevent squishing on small screens
+    minWidth: 32,       // Prevent text from widening the circle
+    overflow: 'hidden', // Guarantee cutoff
   },
   dateCircleSelected: {
     backgroundColor: '#009050',
