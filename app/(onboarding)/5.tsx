@@ -5,8 +5,6 @@ import { useUser } from '@clerk/expo';
 import { Button } from '../../components/Button';
 import { InputField } from '../../components/InputField';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
 
 export default function Step5Measurements() {
   const router = useRouter();
@@ -28,38 +26,11 @@ export default function Step5Measurements() {
       await AsyncStorage.setItem('onboarding_height_ft', heightFt);
       await AsyncStorage.setItem('onboarding_height_in', heightIn);
 
-      // 2. Retrieve ALL onboarding data from AsyncStorage
-      const gender = await AsyncStorage.getItem('onboarding_gender');
-      const goal = await AsyncStorage.getItem('onboarding_goal');
-      const activity = await AsyncStorage.getItem('onboarding_activity');
-      const birthdate = await AsyncStorage.getItem('onboarding_birthdate');
-
-      // 3. Save everything to Firebase
-      const userRef = doc(db, 'users', user.id);
-      await setDoc(userRef, {
-        profile: {
-          gender,
-          goal,
-          activityLevel: activity,
-          birthdate,
-          measurements: {
-            weightKg: parseFloat(weight),
-            heightFt: parseInt(heightFt),
-            heightIn: parseInt(heightIn),
-          },
-          updatedAt: new Date(),
-        },
-        hasOnboarded: true,
-      }, { merge: true });
-
-      // 4. Set final flag in AsyncStorage to completely bypass onboarding next time
-      await AsyncStorage.setItem('has_onboarded', 'true');
-
-      // 5. Navigate to Home
-      router.replace('/');
+      // 2. Navigate to AI generation screen
+      router.replace('/(onboarding)/generating');
     } catch (error) {
-      console.error('Error saving onboarding data:', error);
-      Alert.alert('Error', 'Failed to save your profile. Please try again.');
+      console.error('Error saving measurement data:', error);
+      Alert.alert('Error', 'Failed to save your progress. Please try again.');
     } finally {
       setIsSubmitting(false);
     }

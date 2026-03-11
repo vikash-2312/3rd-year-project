@@ -9,41 +9,35 @@ export default function OnboardingLayout() {
   const segments = useSegments();
   const router = useRouter();
   
-  // Basic routing logic to determine which step we are on:
-  // (onboarding)/1 -> step 1 -> progress 20%
-  // (onboarding)/2 -> step 2 -> progress 40%
-  // (onboarding)/3 -> step 3 -> progress 60%
-  // (onboarding)/4 -> step 4 -> progress 80%
-  // (onboarding)/5 -> step 5 -> progress 100%
-
   const currentSegment = segments[segments.length - 1];
+  const isGenerating = currentSegment === 'generating';
   const stepNumber = parseInt(currentSegment as string) || 1;
   const progress = stepNumber / 5;
 
   const handleBack = () => {
     if (stepNumber > 1) {
       router.back();
-    } else {
-      // If at step 1, where do they go? Maybe sign out? 
-      // We'll just disable the back button on step 1 for now.
     }
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        {stepNumber > 1 && (
-          <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#2D3748" />
-          </TouchableOpacity>
-        )}
-        <View style={styles.progressContainer}>
-          <Text style={styles.stepText}>Step {stepNumber} of 5</Text>
-          <View style={styles.progressBarWrapper}>
-            <View style={[styles.progressBarFill, { width: `${progress * 100}%` }]} />
+      {/* Hide the header entirely on the generating screen */}
+      {!isGenerating && (
+        <View style={styles.header}>
+          {stepNumber > 1 && (
+            <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={24} color="#2D3748" />
+            </TouchableOpacity>
+          )}
+          <View style={styles.progressContainer}>
+            <Text style={styles.stepText}>Step {stepNumber} of 5</Text>
+            <View style={styles.progressBarWrapper}>
+              <View style={[styles.progressBarFill, { width: `${progress * 100}%` }]} />
+            </View>
           </View>
         </View>
-      </View>
+      )}
       
       {/* The step screens will render here */}
       <Stack
