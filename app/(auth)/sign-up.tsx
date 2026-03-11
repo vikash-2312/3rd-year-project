@@ -1,19 +1,21 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
-import { type Href, Link, useRouter } from 'expo-router';
+import { View, Text, StyleSheet, Image, KeyboardAvoidingView, Platform, ScrollView, Alert, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { Link, useRouter } from 'expo-router';
 import { useSignUp, useAuth, useOAuth } from '@clerk/expo';
 import { InputField } from '../../components/InputField';
 import { Button } from '../../components/Button';
 import { saveUserToFirestore } from '../../lib/firebase';
 import { useWarmUpBrowser } from '../../hooks/useWarmUpBrowser';
+import { ArrowLeft01Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react-native';
 import * as WebBrowser from 'expo-web-browser';
 
 WebBrowser.maybeCompleteAuthSession();
 
 export default function SignUp() {
   useWarmUpBrowser();
-  const { signUp, errors, fetchStatus } = useSignUp();
-  const { isSignedIn } = useAuth();
+  const signUpResult = useSignUp() as any;
+  const { isSignedIn, signOut } = useAuth();
   const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
   const router = useRouter();
 
@@ -21,76 +23,146 @@ export default function SignUp() {
   const [emailAddress, setEmailAddress] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [code, setCode] = React.useState('');
+  const [showVerification, setShowVerification] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(false);
+
+  // Get signUp resource - handle both old (isLoaded/signUp) and new Signal API patterns
+  const signUp = signUpResult?.signUp ?? signUpResult;
+  const setActive = signUpResult?.setActive;
+
+  if (isSignedIn) {
+    return null;
+  }
 
   const handleSubmit = async () => {
-    const { error } = await signUp.password({
-      emailAddress,
-      password,
-    });
-
-    if (error) {
-      Alert.alert('Error', error.message || 'Sign up failed');
+    if (!emailAddress || !password) {
+      Alert.alert('Error', 'Please fill in email and password.');
       return;
     }
 
-    if (!error) {
-      await signUp.verifications.sendEmailCode();
+    if (!signUp) {
+      Alert.alert('Error', 'Sign up not ready. Please try again.');
+      return;
+    }
+
+    // Debug: log available methods
+    console.log('[SignUp] Available methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(signUp)));
+
+    setIsLoading(true);
+    try {
+      // STEP 1 - Create signup attempt
+      await signUp.create({
+        emailAddress: emailAddress,
+        password: password,
+        firstName: name.split(' ')[0] || '',
+        lastName: name.split(' ').slice(1).join(' ') || '',
+      });
+
+      // STEP 2 - Send verification email code
+      try {
+        await signUp.sendEmailCode();
+      } catch (prepareErr: any) {
+        console.error('[SignUp] sendEmailCode failed:', prepareErr?.errors?.[0]?.longMessage || prepareErr?.message || String(prepareErr));
+      }
+
+      // STEP 3 - Show verification screen
+      setShowVerification(true);
+    } catch (err: any) {
+      console.error('[SignUp] Error:', JSON.stringify(err, null, 2));
+      const msg = err?.errors?.[0]?.message ?? err?.message ?? 'Sign up failed. Please try again.';
+      Alert.alert('Sign Up Error', msg);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleVerify = async () => {
-    await signUp.verifications.verifyEmailCode({ code });
+    if (!code.trim()) {
+      Alert.alert('Error', 'Please enter the verification code.');
+      return;
+    }
 
-    if (signUp.status === 'complete') {
-      // Save user info to Firebase
-      try {
-        const userId = signUp.createdUserId;
-        if (userId) {
-          await saveUserToFirestore(userId, emailAddress, name);
-        }
-      } catch (e) {
-        console.error('Firebase save error:', e);
-      }
+    if (!signUp) {
+      Alert.alert('Error', 'Sign up not ready. Please try again.');
+      return;
+    }
 
-      await signUp.finalize({
-        navigate: ({ session, decorateUrl }) => {
-          if (session?.currentTask) {
-            console.log(session?.currentTask);
-            return;
+    setIsLoading(true);
+    try {
+      // STEP 4 - Verify the email code
+      const result = await signUp.verifyEmailCode({ code });
+      
+      console.log('[SignUp] verifyEmailCode full result:', JSON.stringify(result, null, 2));
+      console.log('[SignUp] signUp object status after verify:', signUp.status);
+
+      // In the new API, result.status or signUp.status might dictate completion
+      const currentStatus = result?.status || signUp.status;
+
+      if (currentStatus === 'complete' || currentStatus === 'missing_requirements') {
+        // Save to Firebase first so the document exists before redirection
+        try {
+          if (result.createdUserId) {
+            await saveUserToFirestore(result.createdUserId, emailAddress, name);
           }
-          const url = decorateUrl('/');
-          router.push(url as Href);
-        },
-      });
-    } else {
-      console.error('Sign-up attempt not complete:', signUp);
+        } catch (fbErr) {
+          console.error('[SignUp] Firebase error:', fbErr);
+        }
+
+        // STEP 5 - Finalize signup
+        await signUp.finalize();
+
+        // Enforce a strict log-out in case Clerk auto-signed them in via session creation
+        // If they are signed in, app/_layout.tsx will forcefully redirect them to "/"
+        if (signOut) {
+          try {
+            await signOut();
+          } catch (e) {
+            console.log('Skipping signout error:', e);
+          }
+        }
+
+        // Redirect to sign-in screen instead of auto-logging in
+        Alert.alert('Success', 'Account created successfully! Please sign in.');
+        router.replace('/sign-in');
+      } else {
+        const errorStatus = result?.status || signUp.status || 'unknown';
+        Alert.alert('Verification Incomplete', `Status: ${errorStatus}. Please check your code.`);
+      }
+    } catch (err: any) {
+      console.error('[SignUp] Verify error array:', JSON.stringify(err?.errors, null, 2));
+      const msg = err?.errors?.[0]?.longMessage ?? err?.errors?.[0]?.message ?? err?.message ?? 'Verification failed. Try again.';
+      Alert.alert('Verification Error', msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const onResendPress = async () => {
+    if (!signUp) return;
+    try {
+      await signUp.sendEmailCode();
+      Alert.alert('Success', 'Verification code resent to your email.');
+    } catch (err: any) {
+      const msg = err?.errors?.[0]?.message ?? err?.message ?? 'Failed to resend.';
+      Alert.alert('Error', msg);
     }
   };
 
   const onGoogleSignUpPress = React.useCallback(async () => {
     try {
-      const { createdSessionId, setActive } = await startOAuthFlow();
-
-      if (createdSessionId && setActive) {
-        await setActive({ session: createdSessionId });
+      const { createdSessionId, setActive: setOAuthActive } = await startOAuthFlow();
+      if (createdSessionId && setOAuthActive) {
+        await setOAuthActive({ session: createdSessionId });
         router.replace('/');
       }
     } catch (err) {
-      console.error('OAuth error', err);
+      console.error('OAuth error:', err);
       Alert.alert('Error', 'Google sign up failed. Please try again.');
     }
-  }, []);
+  }, [startOAuthFlow, router]);
 
-  if (signUp.status === 'complete' || isSignedIn) {
-    return null;
-  }
-
-  // Show verification screen
-  if (
-    signUp.status === 'missing_requirements' &&
-    signUp.unverifiedFields.includes('email_address') &&
-    signUp.missingFields.length === 0
-  ) {
+  // ── Verification Screen ────────────────────────────────────────────
+  if (showVerification) {
     return (
       <KeyboardAvoidingView
         style={styles.container}
@@ -98,8 +170,14 @@ export default function SignUp() {
       >
         <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
           <View style={styles.headerContainer}>
-            <Image 
-              source={require('../../assets/images/icon.png')} 
+            <TouchableOpacity
+              onPress={() => setShowVerification(false)}
+              style={styles.backButton}
+            >
+              <HugeiconsIcon icon={ArrowLeft01Icon} size={24} color="#2D3748" />
+            </TouchableOpacity>
+            <Image
+              source={require('../../assets/images/icon.png')}
               style={styles.logo}
               resizeMode="contain"
             />
@@ -119,30 +197,33 @@ export default function SignUp() {
               keyboardType="number-pad"
             />
 
-            {errors?.fields?.code && (
-              <Text style={styles.errorText}>{errors.fields.code.message}</Text>
-            )}
-
-            <Button 
-              title="Verify Email" 
-              onPress={handleVerify} 
-              loading={fetchStatus === 'fetching'}
+            <Button
+              title="Verify Email"
+              onPress={handleVerify}
+              loading={isLoading}
               style={styles.signUpBtn}
             />
 
-            <Button 
-              title="Resend Code" 
+            <Button
+              title="Resend Code"
               variant="outline"
-              onPress={() => signUp.verifications.sendEmailCode()}
+              onPress={onResendPress}
               style={styles.resendBtn}
             />
+
+            <TouchableOpacity
+              onPress={() => setShowVerification(false)}
+              style={styles.editEmailBtn}
+            >
+              <Text style={styles.editEmailText}>Entered wrong email? Go back</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
     );
   }
 
-  // Show sign-up form
+  // ── Sign-Up Form ───────────────────────────────────────────────────
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -150,8 +231,8 @@ export default function SignUp() {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
         <View style={styles.headerContainer}>
-          <Image 
-            source={require('../../assets/images/icon.png')} 
+          <Image
+            source={require('../../assets/images/icon.png')}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -179,10 +260,6 @@ export default function SignUp() {
             keyboardType="email-address"
           />
 
-          {errors?.fields?.emailAddress && (
-            <Text style={styles.errorText}>{errors.fields.emailAddress.message}</Text>
-          )}
-          
           <InputField
             key="password"
             icon="lock-closed-outline"
@@ -192,15 +269,11 @@ export default function SignUp() {
             isPassword
           />
 
-          {errors?.fields?.password && (
-            <Text style={styles.errorText}>{errors.fields.password.message}</Text>
-          )}
-
-          <Button 
-            title="Sign Up" 
-            onPress={handleSubmit} 
-            loading={fetchStatus === 'fetching'}
-            disabled={!emailAddress || !password || fetchStatus === 'fetching'}
+          <Button
+            title="Sign Up"
+            onPress={handleSubmit}
+            loading={isLoading}
+            disabled={!emailAddress || !password || isLoading}
             style={styles.signUpBtn}
           />
 
@@ -220,7 +293,7 @@ export default function SignUp() {
 
         <View style={styles.footerContainer}>
           <Text style={styles.footerText}>Already have an account? </Text>
-          <Link href="/(auth)/sign-in" asChild>
+          <Link href="/sign-in" asChild>
             <Text style={styles.footerLink}>Sign In</Text>
           </Link>
         </View>
@@ -246,6 +319,15 @@ const styles = StyleSheet.create({
   headerContainer: {
     alignItems: 'center',
     marginBottom: 40,
+    position: 'relative',
+    width: '100%',
+  },
+  backButton: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    padding: 10,
+    zIndex: 10,
   },
   logo: {
     width: 100,
@@ -310,5 +392,16 @@ const styles = StyleSheet.create({
     color: '#FF6B6B',
     fontSize: 15,
     fontWeight: 'bold',
+  },
+  editEmailBtn: {
+    marginTop: 20,
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  editEmailText: {
+    color: '#718096',
+    fontSize: 14,
+    fontWeight: '500',
+    textDecorationLine: 'underline',
   },
 });

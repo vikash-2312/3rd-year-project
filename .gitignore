@@ -4,11 +4,15 @@
 node_modules/
 
 # Expo
-.env
+
 .expo/
 dist/
 web-build/
 expo-env.d.ts
+
+# Environment variables
+.env
+.env.*
 
 # Native
 .kotlin/

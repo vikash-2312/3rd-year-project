@@ -8,18 +8,21 @@ import { WeeklyCalendar } from "../../components/WeeklyCalendar";
 import { CaloriesCard } from "../../components/CaloriesCard";
 import { RecentActivity } from "../../components/RecentActivity";
 import { useEffect, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, where, orderBy, limit } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 
 export default function Home() {
   const { signOut } = useAuth();
   const { user } = useUser();
   const [userData, setUserData] = useState<any>(null);
+  const [logs, setLogs] = useState<any[]>([]);
   const [isLoadingProps, setIsLoadingProps] = useState(true);
 
   useEffect(() => {
+    if (!user) return;
+
+    // Fetch user profile data
     const fetchUserData = async () => {
-      if (!user) return;
       try {
         const userRef = doc(db, 'users', user.id);
         const userSnap = await getDoc(userRef);
@@ -27,26 +30,73 @@ export default function Home() {
           setUserData(userSnap.data());
         }
       } catch (error) {
-        console.error("Error fetching user macros:", error);
+        console.error("Error fetching user data:", error);
       } finally {
         setIsLoadingProps(false);
       }
     };
     
     fetchUserData();
+
+    // Listen for logs for the user (completely simple query to avoid index requirement)
+    const today = new Date().toISOString().split('T')[0];
+    const logsQuery = query(
+      collection(db, 'logs'),
+      where('userId', '==', user.id),
+      // orderBy removed to avoid ANY index requirement during development
+      limit(50) 
+    );
+
+    const unsubscribe = onSnapshot(logsQuery, (snapshot) => {
+      const allLogs = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          timestamp: data.timestamp,
+          date: data.date,
+          name: data.name,
+          calories: data.calories,
+          protein: data.protein,
+          carbs: data.carbs,
+          fat: data.fat,
+          time: data.timestamp?.toDate() 
+            ? data.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : 'Just now'
+        };
+      });
+
+      // Sort and filter client-side to be 100% safe
+      const dailyLogs = allLogs
+        .filter((log: any) => log.date === today)
+        .sort((a, b) => {
+          const timeA = a.timestamp?.toMillis?.() || 0;
+          const timeB = b.timestamp?.toMillis?.() || 0;
+          return timeB - timeA;
+        })
+        .slice(0, 5);
+        
+      setLogs(dailyLogs);
+    }, (error) => {
+      console.error("Firestore Snapshot Error:", error);
+    });
+
+    return () => unsubscribe();
   }, [user]);
 
-  // Safely extract macro values with fallback defaults
-  const macros = userData?.profile?.macros || {};
-  const dailyCalories = macros.dailyCalories || 2000;
-  // Temporary consumed logic: assuming the user hasn't eaten yet, or we'd load this from a daily log
-  const consumedCalories = 0; 
-  const remainingCalories = Math.max(0, dailyCalories - consumedCalories);
-  const progress = dailyCalories > 0 ? (dailyCalories - remainingCalories) / dailyCalories : 0;
+  // Aggregate macros from logs
+  const consumedMacros = logs.reduce((acc, log) => ({
+    calories: acc.calories + (log.calories || 0),
+    protein: acc.protein + (log.protein || 0),
+    carbs: acc.carbs + (log.carbs || 0),
+    fats: acc.fats + (log.fat || 0),
+  }), { calories: 0, protein: 0, carbs: 0, fats: 0 });
 
-  const proteinGrams = macros.proteinGrams || 0;
-  const carbsGrams = macros.carbsGrams || 0;
-  const fatsGrams = macros.fatsGrams || 0;
+  // Safely extract target macro values
+  const targets = userData?.profile?.macros || {};
+  const dailyCalories = targets.dailyCalories || 2000;
+  
+  const remainingCalories = Math.max(0, dailyCalories - consumedMacros.calories);
+  const progress = dailyCalories > 0 ? consumedMacros.calories / dailyCalories : 0;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -60,14 +110,13 @@ export default function Home() {
           <CaloriesCard 
             remaining={remainingCalories} 
             progress={progress} 
-            protein={proteinGrams} 
-            carbs={carbsGrams} 
-            fats={fatsGrams} 
+            protein={Math.round(consumedMacros.protein)} 
+            carbs={Math.round(consumedMacros.carbs)} 
+            fats={Math.round(consumedMacros.fats)} 
           />
         )}
 
-        {/* Recent Activity Section */}
-        <RecentActivity activities={[]} />
+        <RecentActivity activities={logs} />
 
         <View style={styles.testSection}>
           <Text style={styles.title}>Welcome Home!</Text>
@@ -75,7 +124,6 @@ export default function Home() {
             {user?.fullName ? `Hello, ${user.fullName}!` : "You are successfully authenticated."}
           </Text>
 
-          {/* Temporary clear button for testing */}
           <Button
             title="Reset Onboarding (Debug)"
             variant="outline"
