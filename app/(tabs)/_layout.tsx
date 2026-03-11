@@ -13,6 +13,7 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Tabs, useRouter } from 'expo-router';
 import React, { useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
 import {
   Animated,
   Modal,
@@ -25,6 +26,7 @@ import {
 
 export default function TabsLayout() {
   const [isModalVisible, setModalVisible] = useState(false);
+  const [isPhotoModalVisible, setPhotoModalVisible] = useState(false);
   const router = useRouter();
 
   const handleFabPress = () => {
@@ -38,13 +40,67 @@ export default function TabsLayout() {
     // Small delay to let the modal close before navigating
     setTimeout(() => {
       if (option === 'Food Database') {
-        console.log('[FAB] Navigating to /food-search');
         router.push('/food-search');
+      } else if (option === 'Scan Food') {
+        setPhotoModalVisible(true);
       } else {
         console.log(`[FAB] Other option: ${option}`);
         // TODO: Navigate to the relevant screen for each option
       }
     }, 300);
+  };
+
+  const pickImage = async (useCamera: boolean) => {
+    setPhotoModalVisible(false);
+    
+    try {
+      if (useCamera) {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          alert('Sorry, we need camera permissions to make this work!');
+          return;
+        }
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          alert('Sorry, we need camera roll permissions to make this work!');
+          return;
+        }
+      }
+
+      const result = useCamera 
+        ? await ImagePicker.launchCameraAsync({
+            mediaTypes: 'images',
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 0.8,
+            base64: true, // Tell image picker to generate base64 right away
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: 'images',
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 0.8,
+            base64: true, // Tell image picker to generate base64 right away
+          });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const imageUri = result.assets[0].uri;
+        const base64Data = result.assets[0].base64 || '';
+        
+        // Navigate to analyzing screen with BOTH the URI limit (for display) and the Base64 data (for AI)
+        router.push({
+          pathname: '/analyze-food',
+          params: { 
+            imageUri: encodeURIComponent(imageUri),
+            imageBase64: encodeURIComponent(base64Data)
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error picking image:", error);
+      alert('Failed to pick image. Please try again.');
+    }
   };
 
   return (
@@ -170,6 +226,44 @@ export default function TabsLayout() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Photo Source Modal */}
+      <Modal
+        visible={isPhotoModalVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setPhotoModalVisible(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setPhotoModalVisible(false)}>
+          <View style={styles.photoModalContent}>
+            <Text style={styles.photoModalTitle}>Select Image Source</Text>
+            
+            <TouchableOpacity 
+              style={styles.photoOptionButton}
+              onPress={() => pickImage(true)}
+            >
+              <Text style={styles.photoOptionText}>Take a Photo</Text>
+            </TouchableOpacity>
+            
+            <View style={styles.photoDivider} />
+
+            <TouchableOpacity 
+              style={styles.photoOptionButton}
+              onPress={() => pickImage(false)}
+            >
+              <Text style={styles.photoOptionText}>Choose from Gallery</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.photoCancelButton}
+              onPress={() => setPhotoModalVisible(false)}
+            >
+              <Text style={styles.photoCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -286,4 +380,46 @@ const styles = StyleSheet.create({
     color: '#D69E2E',
     marginLeft: 2,
   },
+
+  // Photo Source Modal Styles
+  photoModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  photoModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2D3748',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  photoOptionButton: {
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  photoOptionText: {
+    fontSize: 16,
+    color: '#009050',
+    fontWeight: '600',
+  },
+  photoDivider: {
+    height: 1,
+    backgroundColor: '#EDF2F7',
+    marginHorizontal: 16,
+  },
+  photoCancelButton: {
+    marginTop: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+    backgroundColor: '#F7FAFC',
+    borderRadius: 12,
+  },
+  photoCancelText: {
+    fontSize: 16,
+    color: '#E53E3E',
+    fontWeight: '600',
+  }
 });
