@@ -8,10 +8,8 @@ import { useRouter } from "expo-router";
 import { doc, getDoc } from "firebase/firestore";
 
 export default function Index() {
-  const { signOut } = useAuth();
   const { user } = useUser();
   const router = useRouter();
-  const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(true);
 
   useEffect(() => {
     const checkOnboardingStatus = async () => {
@@ -22,7 +20,8 @@ export default function Index() {
         const hasOnboardedLocal = await AsyncStorage.getItem('has_onboarded');
         
         if (hasOnboardedLocal === 'true') {
-          setIsCheckingOnboarding(false);
+          // @ts-ignore
+          router.replace('/(tabs)');
           return;
         }
 
@@ -33,14 +32,16 @@ export default function Index() {
         if (userDoc.exists() && userDoc.data().hasOnboarded) {
           // User has onboarded before, save to local storage for next time
           await AsyncStorage.setItem('has_onboarded', 'true');
-          setIsCheckingOnboarding(false);
+          // @ts-ignore
+          router.replace('/(tabs)');
         } else {
           // User has never onboarded, redirect to the flow
           router.replace('/(onboarding)/1');
         }
       } catch (error) {
         console.error("Error checking onboarding status:", error);
-        setIsCheckingOnboarding(false); // Fallback to showing home to prevent getting stuck
+        // @ts-ignore
+        router.replace('/(tabs)'); // Fallback to tabs to prevent getting stuck
       }
     };
 
@@ -60,45 +61,10 @@ export default function Index() {
     }
   }, [user]);      
 
-  if (isCheckingOnboarding) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#FF6B6B" />
-        <Text style={styles.loadingText}>Setting up your profile...</Text>
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Welcome Home!</Text>
-      <Text style={styles.subtitle}>
-        {user?.fullName ? `Hello, ${user.fullName}!` : "You are successfully authenticated."}
-      </Text>
-      
-      {/* Temporary clear button for testing */}
-      <Button 
-        title="Reset Onboarding (Debug)"
-        variant="outline"
-        style={{ marginBottom: 16, width: '100%' }}
-        onPress={async () => {
-           await AsyncStorage.removeItem('has_onboarded');
-           await AsyncStorage.removeItem('onboarding_gender');
-           await AsyncStorage.removeItem('onboarding_goal');
-           await AsyncStorage.removeItem('onboarding_activity');
-           await AsyncStorage.removeItem('onboarding_birthdate');
-           await AsyncStorage.removeItem('onboarding_weight');
-           await AsyncStorage.removeItem('onboarding_height_ft');
-           await AsyncStorage.removeItem('onboarding_height_in');
-           alert('Cleared! Refresh app to re-onboard');
-        }} 
-      />
-
-      <Button 
-        title="Sign Out" 
-        onPress={() => signOut()} 
-        style={styles.button}
-      />
+    <View style={styles.loadingContainer}>
+      <ActivityIndicator size="large" color="#FF6B6B" />
+      <Text style={styles.loadingText}>Setting up your profile...</Text>
     </View>
   );
 }
