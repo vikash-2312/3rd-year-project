@@ -20,13 +20,11 @@ export function RecentActivity({ activities = [] }: RecentActivityProps) {
 
   return (
     <View style={styles.container}>
-      {/* Section Header */}
       <View style={styles.headerRow}>
         <Text style={styles.sectionTitle}>Recent Activity</Text>
       </View>
 
       {isEmpty ? (
-        /* Empty State */
         <View style={styles.emptyStateCard}>
           <View style={styles.emptyIconContainer}>
             <HugeiconsIcon icon={Activity01Icon} size={48} color="#CBD5E0" />
@@ -37,7 +35,6 @@ export function RecentActivity({ activities = [] }: RecentActivityProps) {
           </Text>
         </View>
       ) : (
-        /* Activity List */
         <View style={styles.activityList}>
           {activities.map((activity) => (
             <View key={activity.id} style={styles.activityItem}>

@@ -1,4 +1,4 @@
-import { useSignIn, useOAuth } from '@clerk/expo';
+import { useSignIn, useAuth } from '@clerk/expo';
 import { type Href, Link, useRouter } from 'expo-router';
 import React from 'react';
 import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -11,51 +11,44 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function SignIn() {
   useWarmUpBrowser();
-  const { signIn, errors, fetchStatus } = useSignIn();
-  const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
+  const { signIn, setActive } = useSignIn() as Record<string, any>;
   const router = useRouter();
 
   const [emailAddress, setEmailAddress] = React.useState('');
   const [password, setPassword] = React.useState('');
+  const [isLoading, setIsLoading] = React.useState(false);
 
   const handleSubmit = async () => {
-    const { error } = await signIn.password({
-      emailAddress,
-      password,
-    });
+    if (!signIn) return;
 
-    if (error) {
-      Alert.alert('Error', error.message || 'Sign in failed');
-      return;
-    }
-
-    if (signIn.status === 'complete') {
-      await signIn.finalize({
-        navigate: ({ session, decorateUrl }) => {
-          if (session?.currentTask) {
-            console.log(session?.currentTask);
-            return;
-          }
-          const url = decorateUrl('/');
-          router.push(url as Href);
-        },
+    setIsLoading(true);
+    try {
+      const { error } = await signIn.password({
+        emailAddress,
+        password,
       });
+
+      if (error) {
+        Alert.alert('Error', error.message || 'Sign in failed');
+        return;
+      }
+      
+      if (signIn.status === 'complete') {
+        await signIn.finalize();
+        if (setActive && signIn.createdSessionId) {
+          await setActive({ session: signIn.createdSessionId });
+        }
+      }
+    } catch (err: any) {
+      console.error('[SignIn] Error:', JSON.stringify(err, null, 2));
+      const msg = err?.errors?.[0]?.longMessage ?? err?.errors?.[0]?.message ?? err?.message ?? 'Sign in failed. Please try again.';
+      Alert.alert('Error', msg);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const onGoogleSignInPress = React.useCallback(async () => {
-    try {
-      const { createdSessionId, setActive } = await startOAuthFlow();
 
-      if (createdSessionId && setActive) {
-        await setActive({ session: createdSessionId });
-        router.replace('/');
-      }
-    } catch (err) {
-      console.error('OAuth error', err);
-      Alert.alert('Error', 'Google sign in failed. Please try again.');
-    }
-  }, []);
 
   return (
     <KeyboardAvoidingView
@@ -93,29 +86,12 @@ export default function SignIn() {
             isPassword
           />
 
-          {errors?.fields?.password && (
-            <Text style={styles.errorText}>{errors.fields.password.message}</Text>
-          )}
-
           <Button
             title="Sign In"
             onPress={handleSubmit}
-            loading={fetchStatus === 'fetching'}
-            disabled={!emailAddress || !password || fetchStatus === 'fetching'}
+            loading={isLoading}
+            disabled={!emailAddress || !password || isLoading}
             style={styles.signInBtn}
-          />
-
-          <View style={styles.dividerContainer}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.divider} />
-          </View>
-
-          <Button
-            title="Continue with Google"
-            variant="outline"
-            onPress={onGoogleSignInPress}
-            style={styles.googleBtn}
           />
         </View>
 

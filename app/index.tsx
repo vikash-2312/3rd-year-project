@@ -16,8 +16,8 @@ export default function Index() {
       if (!user) return;
 
       try {
-        // 1. Check local storage first for speed
-        const hasOnboardedLocal = await AsyncStorage.getItem('has_onboarded');
+        // 1. Check local storage first for speed (scoped to the specific user!)
+        const hasOnboardedLocal = await AsyncStorage.getItem(`has_onboarded_${user.id}`);
         
         if (hasOnboardedLocal === 'true') {
           // @ts-ignore
@@ -29,13 +29,31 @@ export default function Index() {
         const userRef = doc(db, 'users', user.id);
         const userDoc = await getDoc(userRef);
 
-        if (userDoc.exists() && userDoc.data().hasOnboarded) {
-          // User has onboarded before, save to local storage for next time
-          await AsyncStorage.setItem('has_onboarded', 'true');
-          // @ts-ignore
-          router.replace('/(tabs)');
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          const p = data?.profile;
+          
+          // Verify that all required onboarding fields are actually populated in the database
+          const hasCompleteProfile = !!(
+            p?.gender && 
+            p?.activityLevel && 
+            p?.goal && 
+            p?.birthdate && 
+            p?.measurements?.weightKg !== undefined && 
+            p?.measurements?.heightFt !== undefined
+          );
+
+          if (hasCompleteProfile) {
+            // User has a complete profile, save to local storage for next time
+            await AsyncStorage.setItem(`has_onboarded_${user.id}`, 'true');
+            // @ts-ignore
+            router.replace('/(tabs)');
+          } else {
+            // Missing required data, force onboarding
+            router.replace('/(onboarding)/1');
+          }
         } else {
-          // User has never onboarded, redirect to the flow
+          // User has no database record, redirect to the flow
           router.replace('/(onboarding)/1');
         }
       } catch (error) {

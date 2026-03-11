@@ -11,7 +11,7 @@ import {
   UserCircleIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   Animated,
@@ -25,15 +25,26 @@ import {
 
 export default function TabsLayout() {
   const [isModalVisible, setModalVisible] = useState(false);
+  const router = useRouter();
 
   const handleFabPress = () => {
     setModalVisible(true);
   };
 
   const handleOptionPress = (option: string) => {
+    console.log(`[FAB] Option pressed: ${option}`);
     setModalVisible(false);
-    console.log(`Selected: ${option}`);
-    // TODO: Navigate to the relevant screen for each option
+    
+    // Small delay to let the modal close before navigating
+    setTimeout(() => {
+      if (option === 'Food Database') {
+        console.log('[FAB] Navigating to /food-search');
+        router.push('/food-search');
+      } else {
+        console.log(`[FAB] Other option: ${option}`);
+        // TODO: Navigate to the relevant screen for each option
+      }
+    }, 300);
   };
 
   return (
@@ -100,7 +111,7 @@ export default function TabsLayout() {
         {/* Overlay: tap to dismiss */}
         <Pressable style={styles.modalOverlay} onPress={() => setModalVisible(false)}>
           {/* Modal Content */}
-          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={styles.modalContent} onPress={(e) => { /* Prevent clicks from reaching overlay */ }}>
             {/* Grid: 2 cards per row */}
             <View style={styles.optionsGrid}>
               {/* Log Exercise */}
