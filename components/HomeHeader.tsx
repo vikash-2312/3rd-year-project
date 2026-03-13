@@ -1,11 +1,13 @@
 import React from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { useUser } from '@clerk/expo';
+import { useRouter } from 'expo-router';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Notification01Icon } from '@hugeicons/core-free-icons';
 
 export function HomeHeader() {
   const { user } = useUser();
+  const router = useRouter();
 
   const name = user?.fullName || user?.primaryEmailAddress?.emailAddress?.split('@')[0] || 'User';
   const imageUrl = user?.imageUrl;
@@ -26,7 +28,10 @@ export function HomeHeader() {
         </View>
       </View>
 
-      <TouchableOpacity style={styles.notificationButton}>
+      <TouchableOpacity 
+        style={styles.notificationButton}
+        onPress={() => router.push('/notifications' as any)}
+      >
         {/* We will replace Notification01Icon if it doesn't exist */}
         <HugeiconsIcon icon={Notification01Icon} size={24} color="#2D3748" />
         <View style={styles.notificationDot} />

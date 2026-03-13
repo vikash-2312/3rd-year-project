@@ -8,8 +8,23 @@ type DayData = {
   dayNumber: string; // 10
 };
 
-export function WeeklyCalendar() {
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+type WeeklyCalendarProps = {
+  selectedDate?: Date;
+  onDateSelect?: (date: Date) => void;
+};
+
+export function WeeklyCalendar({ selectedDate: propsSelectedDate, onDateSelect }: WeeklyCalendarProps) {
+  const [internalSelectedDate, setInternalSelectedDate] = useState<Date>(new Date());
+
+  const selectedDate = propsSelectedDate || internalSelectedDate;
+  const setSelectedDate = (date: Date) => {
+    if (onDateSelect) {
+      onDateSelect(date);
+    } else {
+      setInternalSelectedDate(date);
+    }
+  };
+
   const [weekDays, setWeekDays] = useState<DayData[]>([]);
   const flatListRef = useRef<FlatList>(null);
 
@@ -21,8 +36,8 @@ export function WeeklyCalendar() {
   const gap = 8;
   const totalGaps = gap * 6; // 6 gaps between 7 items
   // Add a pseudo padding inside the items to make them look nice while filling the width
-  const paddingSides = 32; 
-  const availableWidth = screenWidth - paddingSides; 
+  const paddingSides = 32;
+  const availableWidth = screenWidth - paddingSides;
   const itemWidth = (availableWidth - totalGaps) / 7;
 
   // Generate a buffer of days: full weeks past, stopping at the end of the current week
@@ -45,7 +60,7 @@ export function WeeklyCalendar() {
       const d = addDays(startDate, i);
       days.push({
         date: d,
-        dayName: format(d, 'EEE').toUpperCase(), 
+        dayName: format(d, 'EEE').toUpperCase(),
         dayNumber: format(d, 'd'),
       });
     }
@@ -70,7 +85,7 @@ export function WeeklyCalendar() {
   const renderItem = ({ item, index }: { item: DayData; index: number }) => {
     const isSelected = isSameDay(item.date, selectedDate);
     const isToday = isSameDay(item.date, new Date());
-    
+
     // Add margin to first and last items of a week to simulate paddingHorizontal
     // This ensures total page width is exactly screenWidth
     const isFirstOfWeek = index % 7 === 0;
@@ -91,27 +106,27 @@ export function WeeklyCalendar() {
           onPress={() => setSelectedDate(item.date)}
           activeOpacity={0.7}
         >
-        <Text style={[
-          styles.dayName,
-          isSelected && styles.dayNameSelected,
-          isToday && !isSelected && styles.dayNameToday
-        ]}>
-          {item.dayName}
-        </Text>
-
-        <View style={[
-          styles.dateCircle,
-          isSelected && styles.dateCircleSelected,
-          isToday && !isSelected && styles.dateCircleToday
-        ]}>
           <Text style={[
-            styles.dateNumber,
-            isSelected && styles.dateNumberSelected,
-            isToday && !isSelected && styles.dateNumberToday
+            styles.dayName,
+            isSelected && styles.dayNameSelected,
+            isToday && !isSelected && styles.dayNameToday
           ]}>
-            {item.dayNumber}
+            {item.dayName}
           </Text>
-        </View>
+
+          <View style={[
+            styles.dateCircle,
+            isSelected && styles.dateCircleSelected,
+            isToday && !isSelected && styles.dateCircleToday
+          ]}>
+            <Text style={[
+              styles.dateNumber,
+              isSelected && styles.dateNumberSelected,
+              isToday && !isSelected && styles.dateNumberToday
+            ]}>
+              {item.dayNumber}
+            </Text>
+          </View>
         </TouchableOpacity>
       </View>
     );
@@ -126,12 +141,12 @@ export function WeeklyCalendar() {
         renderItem={renderItem}
         horizontal
         showsHorizontalScrollIndicator={false}
-        pagingEnabled={true} 
+        pagingEnabled={true}
         snapToAlignment="start"
-        snapToInterval={screenWidth} 
+        snapToInterval={screenWidth}
         decelerationRate="fast"
         contentContainerStyle={styles.listContent}
-        initialNumToRender={28} 
+        initialNumToRender={28}
         getItemLayout={(data, index) => (
           // Approximate width of day items (width + margins) for accurate scrollable indexing
           { length: screenWidth / 7, offset: (screenWidth / 7) * index, index }
@@ -192,7 +207,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#009050',
   },
   dateCircleToday: {
-    backgroundColor: '#F7FAFC',
+    backgroundColor: '#ECFDF5',
   },
   dateNumber: {
     fontSize: 16,

@@ -1,8 +1,9 @@
-import { useAuth, useUser } from "@clerk/expo";
+import { useUser } from "@clerk/expo";
 import { collection, doc, getDoc, limit, onSnapshot, query, where } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { format } from "date-fns";
 import { Button } from "../../components/Button";
 import { CaloriesCard } from "../../components/CaloriesCard";
 import { HomeHeader } from "../../components/HomeHeader";
@@ -12,11 +13,12 @@ import { WeeklyCalendar } from "../../components/WeeklyCalendar";
 import { db } from "../../lib/firebase";
 
 export default function Home() {
-  const { signOut } = useAuth();
   const { user } = useUser();
+
   const [userData, setUserData] = useState<any>(null);
   const [logs, setLogs] = useState<any[]>([]);
   const [isLoadingProps, setIsLoadingProps] = useState(true);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
   useEffect(() => {
     if (!user) return;
@@ -39,19 +41,22 @@ export default function Home() {
     fetchUserData();
 
     // Listen for logs for the user (completely simple query to avoid index requirement)
-    const today = new Date().toISOString().split('T')[0];
+    const dateStr = format(selectedDate, 'yyyy-MM-dd');
+    console.log(`[Home] Fetching logs for ${user.id} on date: ${dateStr}`);
     const logsQuery = query(
       collection(db, 'logs'),
       where('userId', '==', user.id),
-      // orderBy removed to avoid ANY index requirement during development
+      where('date', '==', dateStr),
       limit(50)
     );
 
     const unsubscribe = onSnapshot(logsQuery, (snapshot) => {
-      const allLogs = snapshot.docs.map(doc => {
+      console.log(`[Home] Received ${snapshot.docs.length} logs from Firestore`);
+      const dailyLogs = snapshot.docs.map(doc => {
         const data = doc.data();
         return {
           id: doc.id,
+          type: data.type || 'food',
           timestamp: data.timestamp,
           date: data.date,
           name: data.name,
@@ -60,21 +65,20 @@ export default function Home() {
           carbs: data.carbs,
           fat: data.fat,
           waterLiters: data.waterLiters,
+          intensity: data.intensity,
+          duration: data.duration,
+          description: data.description,
+          serving: data.serving,
+          brand: data.brand,
           time: data.timestamp?.toDate()
             ? data.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             : 'Just now'
         };
+      }).sort((a, b) => {
+        const timeA = a.timestamp?.toMillis?.() || 0;
+        const timeB = b.timestamp?.toMillis?.() || 0;
+        return timeB - timeA;
       });
-
-      // Sort and filter client-side to be 100% safe
-      const dailyLogs = allLogs
-        .filter((log: any) => log.date === today)
-        .sort((a, b) => {
-          const timeA = a.timestamp?.toMillis?.() || 0;
-          const timeB = b.timestamp?.toMillis?.() || 0;
-          return timeB - timeA;
-        })
-        .slice(0, 5);
 
       setLogs(dailyLogs);
     }, (error) => {
@@ -82,11 +86,11 @@ export default function Home() {
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, selectedDate]);
 
   // Aggregate macros from logs
   const consumedMacros = logs.reduce((acc, log) => ({
-    calories: acc.calories + (log.calories || 0),
+    calories: acc.calories + (log.type === 'food' ? (log.calories || 0) : 0),
     protein: acc.protein + (log.protein || 0),
     carbs: acc.carbs + (log.carbs || 0),
     fats: acc.fats + (log.fat || 0),
@@ -107,7 +111,7 @@ export default function Home() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <HomeHeader />
-        <WeeklyCalendar />
+        <WeeklyCalendar selectedDate={selectedDate} onDateSelect={setSelectedDate} />
 
         {isLoadingProps ? (
           <ActivityIndicator size="large" color="#009050" style={{ marginVertical: 40 }} />
@@ -133,39 +137,11 @@ export default function Home() {
 
         <RecentActivity activities={logs} />
 
-        <View style={styles.testSection}>
-          {/* <Text style={styles.title}>Welcome Home!</Text>
-          <Text style={styles.subtitle}>
-            {user?.fullName ? `Hello, ${user.fullName}!` : "You are successfully authenticated."}
-          </Text> */}
-          {/* 
-          <Button
-            title="Reset Onboarding (Debug)"
-            variant="outline"
-            style={{ marginBottom: 16, width: '100%' }}
-            onPress={async () => {
-              await AsyncStorage.removeItem('has_onboarded');
-              await AsyncStorage.removeItem('onboarding_gender');
-              await AsyncStorage.removeItem('onboarding_goal');
-              await AsyncStorage.removeItem('onboarding_activity');
-              await AsyncStorage.removeItem('onboarding_birthdate');
-              await AsyncStorage.removeItem('onboarding_weight');
-              await AsyncStorage.removeItem('onboarding_height_ft');
-              await AsyncStorage.removeItem('onboarding_height_in');
-              alert('Cleared! Quit the app to re-onboard');
-            }}
-          /> */}
-
-          <Button
-            title="Sign Out"
-            onPress={() => signOut()}
-            style={styles.button}
-          />
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -176,26 +152,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingBottom: 100, // padding for the floating tab bar
+    paddingBottom: 120, // padding for the floating tab bar
   },
-  testSection: {
-    padding: 24,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2D3748',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#A0AEC0',
-    textAlign: 'center',
-    marginBottom: 32,
-  },
-  button: {
-    width: '100%',
-  }
 });
+

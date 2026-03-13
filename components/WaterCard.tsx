@@ -1,7 +1,8 @@
 import { PencilEdit02Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
+import { router } from 'expo-router';
 import React from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 type WaterCardProps = {
   targetLiters: number;
@@ -15,12 +16,11 @@ export function WaterCard({ targetLiters, consumedLiters }: WaterCardProps) {
   const totalTargetGlasses = Math.ceil(targetLiters / GLASS_VOLUME_L);
   const totalConsumedGlasses = consumedLiters / GLASS_VOLUME_L;
   
-  // Cap at 16 glasses to fit the UI constraint
+  // Cap at 16 glasses to fit the UI constraint (2 rows of 8)
   const displayGlasses = Math.min(totalTargetGlasses, MAX_GLASSES);
   
-  // Remaining calculation based on volume rather than pure glass count
-  const remainingLiters = Math.max(0, targetLiters - consumedLiters);
-  const remainingCalculated = Math.max(0, Math.ceil(remainingLiters / GLASS_VOLUME_L));
+  // Remaining calculation based on glasses
+  const remainingCalculated = Math.max(0, totalTargetGlasses - totalConsumedGlasses);
 
   const renderGlasses = () => {
     const glasses = [];
@@ -36,7 +36,7 @@ export function WaterCard({ targetLiters, consumedLiters }: WaterCardProps) {
         // Half glass
         src = require('../assets/images/half_glass.png');
       } else {
-        // Empty glass (Since empty_glass.png was not found in assets, rendering full glass with low opacity)
+        // Empty glass (Fallback since empty_glass.png was not found)
         src = require('../assets/images/full_glass.png');
         isOpacity = true;
       }
@@ -59,13 +59,16 @@ export function WaterCard({ targetLiters, consumedLiters }: WaterCardProps) {
       <View style={styles.headerRow}>
         <View style={styles.headerLeft}>
           <Text style={styles.titleText}>Water</Text>
+          <Text style={styles.intakeText}>
+            {Math.round(consumedLiters * 1000)}ml / {Math.round(targetLiters * 1000)}ml
+          </Text>
         </View>
-        <TouchableOpacity style={styles.editButton} activeOpacity={0.7}>
+        <View style={styles.editButton}>
           <HugeiconsIcon icon={PencilEdit02Icon} size={20} color="#009050" />
-        </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Glasses Area */}
+      {/* Glasses Area - 2 Rows of 8 */}
       <View style={styles.glassesContainer}>
         {renderGlasses()}
       </View>
@@ -73,7 +76,11 @@ export function WaterCard({ targetLiters, consumedLiters }: WaterCardProps) {
       {/* Footer Text */}
       <View style={styles.footerRow}>
         <Text style={styles.remainingText}>
-          {remainingCalculated} {remainingCalculated === 1 ? 'glass' : 'glasses'} left
+          {remainingCalculated <= 0 ? (
+            <Text style={styles.goalReachedText}>Goal reached! 🎉</Text>
+          ) : (
+            `${remainingCalculated} ${remainingCalculated === 1 ? 'glass' : 'glasses'} left`
+          )}
         </Text>
       </View>
     </View>
@@ -109,23 +116,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#2D3748', // Black/Dark gray matches the Calories card
   },
+  intakeText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#718096',
+    marginLeft: 8,
+  },
   editButton: {
     padding: 4,
   },
   glassesContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'flex-start', // Align to left since they are small
-    gap: 8, // Spacing between glasses
+    justifyContent: 'flex-start',
+    gap: 8,
     marginBottom: 20,
   },
   glassIcon: {
-    width: 28, 
-    height: 38,
+    width: (Dimensions.get('window').width - 150) / 8, 
+    height: 42,
   },
   emptyGlass: {
-    opacity: 0.2, // Visual representation for empty glass since no asset is provided
-    tintColor: '#A0AEC0', 
+    opacity: 0.1, 
+    tintColor: '#D1D5DB', 
   },
   footerRow: {
     alignItems: 'center',
@@ -137,5 +150,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#718096',
+  },
+  goalReachedText: {
+    color: '#009050',
+    fontWeight: '700',
   }
 });
