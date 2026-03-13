@@ -18,8 +18,10 @@ export default function Index() {
       try {
         // 1. Check local storage first for speed (scoped to the specific user!)
         const hasOnboardedLocal = await AsyncStorage.getItem(`has_onboarded_${user.id}`);
+        console.log('[Index] Local onboarding status:', hasOnboardedLocal);
         
         if (hasOnboardedLocal === 'true') {
+          console.log('[Index] User already onboarded (local), redirecting to tabs');
           // @ts-ignore
           router.replace('/(tabs)');
           return;
@@ -28,10 +30,12 @@ export default function Index() {
         // 2. If not in local storage, check Firestore (e.g., user logged in on a new device)
         const userRef = doc(db, 'users', user.id);
         const userDoc = await getDoc(userRef);
+        console.log('[Index] Firestore doc exists:', userDoc.exists());
 
         if (userDoc.exists()) {
           const data = userDoc.data();
           const p = data?.profile;
+          console.log('[Index] Profile data:', p);
           
           // Verify that all required onboarding fields are actually populated in the database
           const hasCompleteProfile = !!(
@@ -42,17 +46,21 @@ export default function Index() {
             p?.measurements?.weightKg !== undefined && 
             p?.measurements?.heightFt !== undefined
           );
+          console.log('[Index] Has complete profile:', hasCompleteProfile);
 
           if (hasCompleteProfile) {
+            console.log('[Index] Profile complete, saving local and redirecting to tabs');
             // User has a complete profile, save to local storage for next time
             await AsyncStorage.setItem(`has_onboarded_${user.id}`, 'true');
             // @ts-ignore
             router.replace('/(tabs)');
           } else {
+            console.log('[Index] Profile incomplete, redirecting to onboarding');
             // Missing required data, force onboarding
             router.replace('/(onboarding)/1');
           }
         } else {
+          console.log('[Index] No Firestore doc, redirecting to onboarding');
           // User has no database record, redirect to the flow
           router.replace('/(onboarding)/1');
         }
