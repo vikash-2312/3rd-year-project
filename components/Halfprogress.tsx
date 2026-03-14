@@ -2,6 +2,7 @@ import { Colors } from "@/constants/Colors";
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
+import { useTheme } from "../lib/ThemeContext";
 
 type Props = {
     progress: number;     // 0 → 1
@@ -22,6 +23,7 @@ export function SegmentedHalfCircleProgress30({
     value,
     label,
 }: Props) {
+    const { colors, isDark } = useTheme();
     const clamped = Math.max(0, Math.min(1, progress));
 
     const radius = (size - strokeWidth) / 2;
@@ -70,7 +72,7 @@ export function SegmentedHalfCircleProgress30({
                         <Path
                             key={i}
                             d={createArc(start, end)}
-                            stroke={isActive ? Colors.primary : "#E5E7EB"}
+                            stroke={isActive ? Colors.primary : (isDark ? '#2D3748' : '#E5E7EB')}
                             strokeWidth={strokeWidth}
                             fill="none"
 
@@ -80,9 +82,9 @@ export function SegmentedHalfCircleProgress30({
                 })}
             </Svg>
             <View style={styles.textOverlay}>
-                <Text style={styles.mainText}>🔥</Text>
-                <Text style={styles.mainText}>{value}</Text>
-                <Text style={styles.subText}>{label}</Text>
+                <Text style={[styles.mainText, { color: colors.text }]}>🔥</Text>
+                <Text style={[styles.mainText, { color: colors.text }]}>{value}</Text>
+                <Text style={[styles.subText, { color: colors.textTertiary }]}>{label}</Text>
             </View>
         </View>
     );

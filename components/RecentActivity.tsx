@@ -3,6 +3,7 @@ import { HugeiconsIcon } from '@hugeicons/react-native';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../lib/ThemeContext';
 
 type ActivityItem = {
   id: string;
@@ -26,6 +27,7 @@ type RecentActivityProps = {
 
 export function RecentActivity({ activities = [] }: RecentActivityProps) {
   const isEmpty = activities.length === 0;
+  const { colors, isDark } = useTheme();
 
   const getExerciseIcon = (name: string) => {
     const n = name.toLowerCase();
@@ -37,16 +39,16 @@ export function RecentActivity({ activities = [] }: RecentActivityProps) {
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <Text style={styles.sectionTitle}>Recent Activity</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Recent Activity</Text>
       </View>
 
       {isEmpty ? (
-        <View style={styles.emptyStateCard}>
-          <View style={styles.emptyIconContainer}>
-            <HugeiconsIcon icon={Activity01Icon} size={48} color="#CBD5E0" />
+        <View style={[styles.emptyStateCard, { backgroundColor: colors.card }]}>
+          <View style={[styles.emptyIconContainer, { backgroundColor: colors.cardAlt }]}>
+            <HugeiconsIcon icon={Activity01Icon} size={48} color={colors.textMuted} />
           </View>
-          <Text style={styles.emptyTitle}>No activities logged yet</Text>
-          <Text style={styles.emptySubtitle}>
+          <Text style={[styles.emptyTitle, { color: colors.textSecondary }]}>No activities logged yet</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
             Tap the + button to log your first meal or workout for the day!
           </Text>
         </View>
@@ -54,26 +56,26 @@ export function RecentActivity({ activities = [] }: RecentActivityProps) {
         activities.filter(activity => activity.type !== 'water').map((activity) => {
             if (activity.type === 'exercise') {
             return (
-              <View key={activity.id} style={styles.exerciseCard}>
+              <View key={activity.id} style={[styles.exerciseCard, { backgroundColor: colors.card }]}>
                 <View style={styles.exerciseHeader}>
-                  <View style={styles.exerciseIconContainer}>
-                    <Ionicons name={getExerciseIcon(activity.name)} size={32} color="#009050" />
+                  <View style={[styles.exerciseIconContainer, { backgroundColor: colors.accentLight }]}>
+                    <Ionicons name={getExerciseIcon(activity.name)} size={32} color={colors.accent} />
                   </View>
                   <View style={styles.exerciseInfo}>
-                    <Text style={styles.exerciseName}>{activity.name}</Text>
+                    <Text style={[styles.exerciseName, { color: colors.text }]}>{activity.name}</Text>
                     <View style={styles.exerciseStats}>
                       <View style={styles.calorieRow}>
-                        <HugeiconsIcon icon={FireIcon} size={14} color="#E53E3E" />
-                        <Text style={styles.exerciseCalories}>{activity.calories} kcal</Text>
+                        <HugeiconsIcon icon={FireIcon} size={14} color={colors.danger} />
+                        <Text style={[styles.exerciseCalories, { color: colors.danger }]}>{activity.calories} kcal</Text>
                       </View>
                       <View style={styles.metaRow}>
-                        <Text style={styles.metaText}>{activity.intensity} Intensity</Text>
-                        <View style={styles.dot} />
-                        <Text style={styles.metaText}>{activity.duration} min</Text>
+                        <Text style={[styles.metaText, { color: colors.textTertiary }]}>{activity.intensity} Intensity</Text>
+                        <View style={[styles.dot, { backgroundColor: colors.border }]} />
+                        <Text style={[styles.metaText, { color: colors.textTertiary }]}>{activity.duration} min</Text>
                       </View>
                     </View>
                   </View>
-                  <Text style={styles.logTime}>{activity.time}</Text>
+                  <Text style={[styles.logTime, { color: colors.textMuted }]}>{activity.time}</Text>
                 </View>
               </View>
             );
@@ -81,49 +83,49 @@ export function RecentActivity({ activities = [] }: RecentActivityProps) {
 
           if (activity.type === 'food') {
             return (
-              <View key={activity.id} style={styles.foodCard}>
+              <View key={activity.id} style={[styles.foodCard, { backgroundColor: colors.card }]}>
                 <View style={styles.foodHeader}>
-                  <View style={styles.foodIconContainer}>
-                    <HugeiconsIcon icon={OrganicFoodIcon} size={30} color="#009050" />
+                  <View style={[styles.foodIconContainer, { backgroundColor: colors.accentLight }]}>
+                    <HugeiconsIcon icon={OrganicFoodIcon} size={30} color={colors.accent} />
                   </View>
                   <View style={styles.foodInfo}>
-                    <Text style={styles.foodName} numberOfLines={1}>{activity.name}</Text>
+                    <Text style={[styles.foodName, { color: colors.text }]} numberOfLines={1}>{activity.name}</Text>
                     <View style={styles.foodStats}>
                       <View style={styles.calorieRow}>
-                        <HugeiconsIcon icon={FireIcon} size={14} color="#E53E3E" />
-                        <Text style={styles.foodCalories}>{activity.calories} kcal</Text>
+                        <HugeiconsIcon icon={FireIcon} size={14} color={colors.danger} />
+                        <Text style={[styles.foodCalories, { color: colors.danger }]}>{activity.calories} kcal</Text>
                       </View>
                       <View style={styles.macroRow}>
-                        <Text style={styles.macroText}>P: {Math.round(activity.protein || 0)}g</Text>
-                        <View style={styles.miniDot} />
-                        <Text style={styles.macroText}>C: {Math.round(activity.carbs || 0)}g</Text>
-                        <View style={styles.miniDot} />
-                        <Text style={styles.macroText}>F: {Math.round(activity.fat || 0)}g</Text>
+                        <Text style={[styles.macroText, { color: colors.textTertiary }]}>P: {Math.round(activity.protein || 0)}g</Text>
+                        <View style={[styles.miniDot, { backgroundColor: colors.border }]} />
+                        <Text style={[styles.macroText, { color: colors.textTertiary }]}>C: {Math.round(activity.carbs || 0)}g</Text>
+                        <View style={[styles.miniDot, { backgroundColor: colors.border }]} />
+                        <Text style={[styles.macroText, { color: colors.textTertiary }]}>F: {Math.round(activity.fat || 0)}g</Text>
                         {activity.serving ? (
                           <>
-                            <View style={styles.miniDot} />
-                            <Text style={styles.macroText}>{activity.serving}</Text>
+                            <View style={[styles.miniDot, { backgroundColor: colors.border }]} />
+                            <Text style={[styles.macroText, { color: colors.textTertiary }]}>{activity.serving}</Text>
                           </>
                         ) : null}
                       </View>
                     </View>
                   </View>
-                  <Text style={styles.logTime}>{activity.time}</Text>
+                  <Text style={[styles.logTime, { color: colors.textMuted }]}>{activity.time}</Text>
                 </View>
               </View>
             );
           }
 
           return (
-            <View key={activity.id} style={styles.activityCard}>
-              <View style={styles.activityIconCircle}>
-                <HugeiconsIcon icon={Activity01Icon} size={20} color="#009050" />
+            <View key={activity.id} style={[styles.activityCard, { backgroundColor: colors.card }]}>
+              <View style={[styles.activityIconCircle, { backgroundColor: colors.accentLight }]}>
+                <HugeiconsIcon icon={Activity01Icon} size={20} color={colors.accent} />
               </View>
               <View style={styles.activityInfo}>
-                <Text style={styles.activityName}>{activity.name}</Text>
-                <Text style={styles.activityTime}>{activity.time}</Text>
+                <Text style={[styles.activityName, { color: colors.text }]}>{activity.name}</Text>
+                <Text style={[styles.activityTime, { color: colors.textMuted }]}>{activity.time}</Text>
               </View>
-              <Text style={styles.activityCalories}>{activity.calories} cal</Text>
+              <Text style={[styles.activityCalories, { color: colors.accent }]}>{activity.calories} cal</Text>
             </View>
           );
         })
@@ -225,6 +227,7 @@ const styles = StyleSheet.create({
   },
   exerciseInfo: {
     flex: 1,
+    marginRight: 8,
   },
   exerciseName: {
     fontSize: 16,
@@ -249,6 +252,7 @@ const styles = StyleSheet.create({
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 6,
   },
   metaText: {
@@ -296,6 +300,7 @@ const styles = StyleSheet.create({
   },
   foodInfo: {
     flex: 1,
+    marginRight: 8,
   },
   foodName: {
     fontSize: 16,
@@ -315,6 +320,7 @@ const styles = StyleSheet.create({
   macroRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 4,
   },
   macroText: {

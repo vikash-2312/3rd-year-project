@@ -22,12 +22,14 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { db } from "../lib/firebase";
+import { useTheme } from "../lib/ThemeContext";
 
 type ThemeType = 'system' | 'light' | 'dark';
 
 export default function Preferences() {
   const { user } = useUser();
   const router = useRouter();
+  const { colors, isDark } = useTheme();
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<ThemeType>('light');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -67,19 +69,19 @@ export default function Preferences() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#009050" />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <HugeiconsIcon icon={ArrowLeft02Icon} size={24} color="#2D3748" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
+      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: colors.cardAlt }]}>
+          <HugeiconsIcon icon={ArrowLeft02Icon} size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Preferences</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Preferences</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -87,8 +89,8 @@ export default function Preferences() {
         {/* Theme Selection */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <HugeiconsIcon icon={Settings02Icon} size={20} color="#009050" />
-            <Text style={styles.sectionTitle}>Theme Appearance</Text>
+            <HugeiconsIcon icon={Settings02Icon} size={20} color={colors.accent} />
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Theme Appearance</Text>
           </View>
           
           <View style={styles.themeGrid}>
@@ -97,7 +99,8 @@ export default function Preferences() {
                 key={opt.id}
                 style={[
                   styles.themeItem,
-                  theme === opt.id && styles.themeItemActive
+                  { backgroundColor: colors.card, borderColor: 'transparent' },
+                  theme === opt.id && [styles.themeItemActive, { borderColor: colors.accent, backgroundColor: colors.accentLight }]
                 ]}
                 onPress={() => {
                   setTheme(opt.id as ThemeType);
@@ -106,17 +109,19 @@ export default function Preferences() {
               >
                 <View style={[
                   styles.iconBox,
-                  theme === opt.id && styles.iconBoxActive
+                  { backgroundColor: colors.cardAlt },
+                  theme === opt.id && { backgroundColor: colors.accent }
                 ]}>
                   <HugeiconsIcon 
                     icon={opt.icon} 
                     size={22} 
-                    color={theme === opt.id ? "#FFFFFF" : "#718096"} 
+                    color={theme === opt.id ? "#FFFFFF" : colors.textTertiary} 
                   />
                 </View>
                 <Text style={[
                   styles.themeLabel,
-                  theme === opt.id && styles.themeLabelActive
+                  { color: colors.textTertiary },
+                  theme === opt.id && { color: colors.accent }
                 ]}>{opt.title}</Text>
               </TouchableOpacity>
             ))}
@@ -126,14 +131,14 @@ export default function Preferences() {
         {/* Notifications */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <HugeiconsIcon icon={Notification03Icon} size={20} color="#009050" />
-            <Text style={styles.sectionTitle}>Notifications</Text>
+            <HugeiconsIcon icon={Notification03Icon} size={20} color={colors.accent} />
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Notifications</Text>
           </View>
 
-          <View style={styles.settingRow}>
+          <View style={[styles.settingRow, { backgroundColor: colors.card }]}>
             <View>
-              <Text style={styles.settingLabel}>Allow Notifications</Text>
-              <Text style={styles.settingSubtitle}>Receive reminders and updates</Text>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>Allow Notifications</Text>
+              <Text style={[styles.settingSubtitle, { color: colors.textTertiary }]}>Receive reminders and updates</Text>
             </View>
             <Switch
               value={notificationsEnabled}
@@ -141,15 +146,15 @@ export default function Preferences() {
                 setNotificationsEnabled(value);
                 updatePreference('notificationsEnabled', value);
               }}
-              trackColor={{ false: '#EDF2F7', true: '#009050' }}
+              trackColor={{ false: colors.switchTrack, true: colors.accent }}
               thumbColor="#FFFFFF"
-              ios_backgroundColor="#EDF2F7"
+              ios_backgroundColor={colors.switchTrack}
             />
           </View>
         </View>
 
-        <View style={styles.infoCard}>
-          <Text style={styles.infoText}>
+        <View style={[styles.infoCard, { backgroundColor: colors.cardAlt, borderLeftColor: colors.border }]}>
+          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
             Theme changes will be applied instantly. Some features may require an app restart.
           </Text>
         </View>

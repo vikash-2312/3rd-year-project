@@ -1,6 +1,7 @@
 import { addDays, format, isSameDay, startOfWeek, subWeeks } from 'date-fns';
 import React, { useEffect, useRef, useState } from 'react';
 import { Dimensions, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useTheme } from '../lib/ThemeContext';
 
 type DayData = {
   date: Date;
@@ -24,6 +25,8 @@ export function WeeklyCalendar({ selectedDate: propsSelectedDate, onDateSelect }
       setInternalSelectedDate(date);
     }
   };
+
+  const { colors, isDark } = useTheme();
 
   const [weekDays, setWeekDays] = useState<DayData[]>([]);
   const flatListRef = useRef<FlatList>(null);
@@ -86,10 +89,13 @@ export function WeeklyCalendar({ selectedDate: propsSelectedDate, onDateSelect }
     const isSelected = isSameDay(item.date, selectedDate);
     const isToday = isSameDay(item.date, new Date());
 
-    // Add margin to first and last items of a week to simulate paddingHorizontal
-    // This ensures total page width is exactly screenWidth
     const isFirstOfWeek = index % 7 === 0;
     const isLastOfWeek = index % 7 === 6;
+
+    // Pre-compute colors to avoid style array merging issues
+    const dayNameColor = (isSelected || isToday) ? colors.accent : colors.textMuted;
+    const dateTextColor = isSelected ? '#FFFFFF' : colors.text;
+    const dateTextWeight = (isSelected || isToday) ? 'bold' : '600';
 
     return (
       <View style={{
@@ -99,31 +105,27 @@ export function WeeklyCalendar({ selectedDate: propsSelectedDate, onDateSelect }
         <TouchableOpacity
           style={[
             styles.dayContainer,
-            { width: itemWidth },
-            isSelected && styles.dayContainerSelected,
-            isToday && !isSelected && styles.dayContainerToday
+            { width: itemWidth, backgroundColor: colors.card, borderColor: colors.border },
           ]}
           onPress={() => setSelectedDate(item.date)}
           activeOpacity={0.7}
         >
-          <Text style={[
-            styles.dayName,
-            isSelected && styles.dayNameSelected,
-            isToday && !isSelected && styles.dayNameToday
-          ]}>
+          <Text style={[styles.dayName, { color: dayNameColor, fontWeight: (isSelected || isToday) ? 'bold' : '600' }]}>
             {item.dayName}
           </Text>
 
-          <View style={[
-            styles.dateCircle,
-            isSelected && styles.dateCircleSelected,
-            isToday && !isSelected && styles.dateCircleToday
-          ]}>
-            <Text style={[
-              styles.dateNumber,
-              isSelected && styles.dateNumberSelected,
-              isToday && !isSelected && styles.dateNumberToday
-            ]}>
+          <View style={{
+            width: 32,
+            height: 32,
+            borderRadius: 16,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: isSelected ? '#009050' : (isToday ? colors.accentLight : 'transparent'),
+            borderWidth: isToday && !isSelected ? 1.5 : 0,
+            borderColor: isToday && !isSelected ? '#009050' : 'transparent',
+            borderStyle: isToday && !isSelected ? 'dashed' : 'solid',
+          }}>
+            <Text style={{ fontSize: 16, color: dateTextColor, fontWeight: dateTextWeight as any }}>
               {item.dayNumber}
             </Text>
           </View>
@@ -139,6 +141,7 @@ export function WeeklyCalendar({ selectedDate: propsSelectedDate, onDateSelect }
         data={weekDays}
         keyExtractor={(item) => item.date.toISOString()}
         renderItem={renderItem}
+        extraData={[selectedDate, colors]}
         horizontal
         showsHorizontalScrollIndicator={false}
         pagingEnabled={true}
@@ -148,7 +151,6 @@ export function WeeklyCalendar({ selectedDate: propsSelectedDate, onDateSelect }
         contentContainerStyle={styles.listContent}
         initialNumToRender={28}
         getItemLayout={(data, index) => (
-          // Approximate width of day items (width + margins) for accurate scrollable indexing
           { length: screenWidth / 7, offset: (screenWidth / 7) * index, index }
         )}
       />
@@ -189,7 +191,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   dayNameToday: {
-    color: '#4A5568',
+    color: '#009050',
     fontWeight: 'bold',
   },
   dateCircle: {
@@ -208,6 +210,9 @@ const styles = StyleSheet.create({
   },
   dateCircleToday: {
     backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#009050',
+    borderStyle: 'dashed',
   },
   dateNumber: {
     fontSize: 16,

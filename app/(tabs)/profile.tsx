@@ -23,11 +23,13 @@ import {
   View 
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTheme } from "../../lib/ThemeContext";
 
 export default function Profile() {
   const { user } = useUser();
   const { signOut } = useAuth();
   const router = useRouter();
+  const { colors, isDark } = useTheme();
 
   const handleLogout = () => {
     signOut();
@@ -49,7 +51,7 @@ export default function Profile() {
   const renderOption = (option: any, index: number, isLast: boolean) => (
     <TouchableOpacity 
       key={index} 
-      style={[styles.optionItem, isLast && styles.noBorder]}
+      style={[styles.optionItem, { borderBottomColor: colors.border }, isLast && styles.noBorder]}
       activeOpacity={0.7}
       onPress={() => option.route && router.push(option.route)}
     >
@@ -57,7 +59,7 @@ export default function Profile() {
         <View style={[styles.optionIconContainer, { backgroundColor: `${option.color}15` }]}>
           <HugeiconsIcon icon={option.icon} size={20} color={option.color} />
         </View>
-        <Text style={styles.optionTitle}>{option.title}</Text>
+        <Text style={[styles.optionTitle, { color: colors.text }]}>{option.title}</Text>
       </View>
       <View style={styles.optionRight}>
         {option.isPremium && (
@@ -65,48 +67,44 @@ export default function Profile() {
             <Text style={styles.proText}>PRO</Text>
           </View>
         )}
-        <HugeiconsIcon icon={ArrowRight01Icon} size={18} color="#A0AEC0" />
+        <HugeiconsIcon icon={ArrowRight01Icon} size={18} color={colors.textMuted} />
       </View>
     </TouchableOpacity>
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <Text style={styles.headerTitle}>Profile</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Profile</Text>
 
-        {/* User Info Card */}
-        <View style={styles.userInfoCard}>
+        <View style={[styles.userInfoCard, { backgroundColor: colors.card }]}>
           <Image 
             source={{ uri: user?.imageUrl }} 
             style={styles.profileImage} 
           />
           <View style={styles.userDetails}>
-            <Text style={styles.userName}>{user?.fullName || "User Name"}</Text>
-            <Text style={styles.userEmail}>{user?.primaryEmailAddress?.emailAddress || "email@example.com"}</Text>
+            <Text style={[styles.userName, { color: colors.text }]}>{user?.fullName || "User Name"}</Text>
+            <Text style={[styles.userEmail, { color: colors.textTertiary }]}>{user?.primaryEmailAddress?.emailAddress || "email@example.com"}</Text>
           </View>
         </View>
 
-        {/* Account Section */}
-        <Text style={styles.sectionTitle}>Account</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Account</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
           {AccountOptions.map((opt, i) => renderOption(opt, i, i === AccountOptions.length - 1))}
         </View>
 
-        {/* Support Section */}
-        <Text style={styles.sectionTitle}>Support</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Support</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
           {SupportOptions.map((opt, i) => renderOption(opt, i, i === SupportOptions.length - 1))}
         </View>
 
-        {/* Logout Button */}
         <TouchableOpacity 
-          style={styles.logoutButton} 
+          style={[styles.logoutButton, { backgroundColor: isDark ? '#3B1A1A' : '#FFF5F5', borderColor: isDark ? '#FC8181' : '#FED7D7' }]} 
           onPress={handleLogout}
           activeOpacity={0.8}
         >
-          <HugeiconsIcon icon={Logout01Icon} size={22} color="#E53E3E" />
-          <Text style={styles.logoutText}>Logout</Text>
+          <HugeiconsIcon icon={Logout01Icon} size={22} color={colors.danger} />
+          <Text style={[styles.logoutText, { color: colors.danger }]}>Logout</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -116,7 +114,7 @@ export default function Profile() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F7FAFC',
+    backgroundColor: '#ECFDF5',
   },
   container: {
     flex: 1,

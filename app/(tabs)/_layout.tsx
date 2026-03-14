@@ -22,6 +22,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { useTheme } from '../../lib/ThemeContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -29,6 +30,7 @@ function TabsLayout() {
   const [isModalVisible, setModalVisible] = useState(false);
   const [isPhotoModalVisible, setPhotoModalVisible] = useState(false);
   const router = useRouter();
+  const { colors, isDark } = useTheme();
 
   const handleFabPress = () => {
     setModalVisible(true);
@@ -113,14 +115,14 @@ function TabsLayout() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Tabs
         screenOptions={{
           headerShown: false,
           tabBarShowLabel: false,
-          tabBarStyle: styles.tabBar,
-          tabBarActiveTintColor: '#009050',
-          tabBarInactiveTintColor: '#A0AEC0',
+          tabBarStyle: [styles.tabBar, { backgroundColor: colors.tabBar }],
+          tabBarActiveTintColor: colors.accent,
+          tabBarInactiveTintColor: colors.textMuted,
 
           tabBarItemStyle: {
             flex: 1,
@@ -197,47 +199,47 @@ function TabsLayout() {
           <Pressable style={styles.modalContent} onPress={(e) => { /* Prevent clicks from reaching overlay */ }}>
             <View style={styles.optionsGrid}>
               <TouchableOpacity
-                style={styles.optionCard}
+                style={[styles.optionCard, { backgroundColor: colors.card }]}
                 activeOpacity={0.7}
                 onPress={() => handleOptionPress('Log Exercise')}
               >
-                <View style={[styles.optionIconCircle, { backgroundColor: '#FFF5F5' }]}>
-                  <HugeiconsIcon icon={Dumbbell01Icon} size={24} color="#E53E3E" />
+                <View style={[styles.optionIconCircle, { backgroundColor: isDark ? '#3B1A1A' : '#FFF5F5' }]}>
+                  <HugeiconsIcon icon={Dumbbell01Icon} size={24} color={isDark ? '#FC8181' : '#E53E3E'} />
                 </View>
-                <Text style={styles.optionLabel}>Log Exercise</Text>
+                <Text style={[styles.optionLabel, { color: colors.text }]}>Log Exercise</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.optionCard}
+                style={[styles.optionCard, { backgroundColor: colors.card }]}
                 activeOpacity={0.7}
                 onPress={() => handleOptionPress('Add Drink Water')}
               >
-                <View style={[styles.optionIconCircle, { backgroundColor: '#EBF8FF' }]}>
-                  <HugeiconsIcon icon={DropletIcon} size={24} color="#3182CE" />
+                <View style={[styles.optionIconCircle, { backgroundColor: colors.blueLight }]}>
+                  <HugeiconsIcon icon={DropletIcon} size={24} color={colors.blue} />
                 </View>
-                <Text style={styles.optionLabel}>Add Drink Water</Text>
+                <Text style={[styles.optionLabel, { color: colors.text }]}>Add Drink Water</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.optionCard}
+                style={[styles.optionCard, { backgroundColor: colors.card }]}
                 activeOpacity={0.7}
                 onPress={() => handleOptionPress('Food Database')}
               >
-                <View style={[styles.optionIconCircle, { backgroundColor: '#FFFBEB' }]}>
-                  <HugeiconsIcon icon={SearchSquareIcon} size={24} color="#DD6B20" />
+                <View style={[styles.optionIconCircle, { backgroundColor: isDark ? '#3B2A1A' : '#FFFBEB' }]}>
+                  <HugeiconsIcon icon={SearchSquareIcon} size={24} color={isDark ? '#FBD38D' : '#DD6B20'} />
                 </View>
-                <Text style={styles.optionLabel}>Food Database</Text>
+                <Text style={[styles.optionLabel, { color: colors.text }]}>Food Database</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.optionCard}
+                style={[styles.optionCard, { backgroundColor: colors.card }]}
                 activeOpacity={0.7}
                 onPress={() => handleOptionPress('Scan Food')}
               >
-                <View style={[styles.optionIconCircle, { backgroundColor: '#F0FFF4' }]}>
-                  <HugeiconsIcon icon={ScanIcon} size={24} color="#009050" />
+                <View style={[styles.optionIconCircle, { backgroundColor: colors.accentLight }]}>
+                  <HugeiconsIcon icon={ScanIcon} size={24} color={colors.accent} />
                 </View>
-                <Text style={styles.optionLabel}>Scan Food</Text>
+                <Text style={[styles.optionLabel, { color: colors.text }]}>Scan Food</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -266,30 +268,30 @@ function TabsLayout() {
         onRequestClose={() => setPhotoModalVisible(false)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => setPhotoModalVisible(false)}>
-          <View style={styles.photoModalContent}>
-            <Text style={styles.photoModalTitle}>Select Image Source</Text>
+          <View style={[styles.photoModalContent, { backgroundColor: colors.card }]}>
+            <Text style={[styles.photoModalTitle, { color: colors.text }]}>Select Image Source</Text>
 
             <TouchableOpacity
               style={styles.photoOptionButton}
               onPress={() => pickImage(true)}
             >
-              <Text style={styles.photoOptionText}>Take a Photo</Text>
+              <Text style={[styles.photoOptionText, { color: colors.accent }]}>Take a Photo</Text>
             </TouchableOpacity>
 
-            <View style={styles.photoDivider} />
+            <View style={[styles.photoDivider, { backgroundColor: colors.border }]} />
 
             <TouchableOpacity
               style={styles.photoOptionButton}
               onPress={() => pickImage(false)}
             >
-              <Text style={styles.photoOptionText}>Choose from Gallery</Text>
+              <Text style={[styles.photoOptionText, { color: colors.accent }]}>Choose from Gallery</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.photoCancelButton}
+              style={[styles.photoCancelButton, { backgroundColor: colors.cardAlt }]}
               onPress={() => setPhotoModalVisible(false)}
             >
-              <Text style={styles.photoCancelText}>Cancel</Text>
+              <Text style={[styles.photoCancelText, { color: colors.danger }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -307,7 +309,7 @@ const styles = StyleSheet.create({
   tabBar: {
     position: 'absolute',
     bottom: 24,
-    marginHorizontal: 20,
+    marginHorizontal: 40,
     left: 20,
     right: 20,
     height: 60,
@@ -319,7 +321,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     bottom: 50, // Centered vertically in the 60px height tab bar ( (60-50)/2 + 24 )
-    left: 20 + ((SCREEN_WIDTH - 40) * 0.875) - 25, // Centered in the 4th slot of 4
+    left: 10 + ((SCREEN_WIDTH - 40) * 0.875) - 25, // Centered in the 4th slot of 4 20  
     width: 50,
     height: 50,
     borderRadius: 25,
