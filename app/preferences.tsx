@@ -23,6 +23,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { db } from "../lib/firebase";
 import { useTheme } from "../lib/ThemeContext";
+import { scheduleDailyReminders, saveNotificationHistory } from "../lib/notifications";
+import * as Notifications from 'expo-notifications';
 
 type ThemeType = 'system' | 'light' | 'dark';
 
@@ -136,15 +138,16 @@ export default function Preferences() {
           </View>
 
           <View style={[styles.settingRow, { backgroundColor: colors.card }]}>
-            <View>
+            <View style={{ flex: 1, paddingRight: 16 }}>
               <Text style={[styles.settingLabel, { color: colors.text }]}>Allow Notifications</Text>
               <Text style={[styles.settingSubtitle, { color: colors.textTertiary }]}>Receive reminders and updates</Text>
             </View>
             <Switch
               value={notificationsEnabled}
-              onValueChange={(value) => {
+              onValueChange={async (value) => {
                 setNotificationsEnabled(value);
-                updatePreference('notificationsEnabled', value);
+                await updatePreference('notificationsEnabled', value);
+                await scheduleDailyReminders(value);
               }}
               trackColor={{ false: colors.switchTrack, true: colors.accent }}
               thumbColor="#FFFFFF"

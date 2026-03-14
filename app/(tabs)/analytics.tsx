@@ -170,7 +170,8 @@ export default function Analytics() {
     decimalPlaces: 0,
     color: (opacity = 1) => isDark ? `rgba(226, 232, 240, ${opacity})` : `rgba(45, 55, 72, ${opacity})`,
     labelColor: (opacity = 1) => isDark ? `rgba(160, 174, 192, ${opacity})` : `rgba(113, 128, 150, ${opacity})`,
-    barPercentage: 0.7,
+    barPercentage: 0.4, // Reduced to prevent overlap for interleaved 14 bars
+    barRadius: 4, 
     propsForBackgroundLines: {
       strokeDasharray: '4',
       stroke: colors.border,
@@ -197,42 +198,46 @@ export default function Analytics() {
             onPress={() => setIsStreakModalVisible(true)}
             activeOpacity={0.8}
           >
-            <View style={styles.cardHeaderRow}>
-              <View style={[styles.iconContainer, { width: 44, height: 44, borderRadius: 12, marginBottom: 0 }]}>
+            <View style={[styles.cardHeaderRow, SCREEN_WIDTH < 400 && { gap: 4 }]}>
+              <View style={[
+                styles.iconContainer, 
+                { width: SCREEN_WIDTH < 400 ? 36 : 44, height: SCREEN_WIDTH < 400 ? 36 : 44, borderRadius: 12, marginBottom: 0 }
+              ]}>
                 <Image 
                   source={require('../../assets/images/fire.png')} 
-                  style={{ width: 24, height: 24 }} 
+                  style={{ width: SCREEN_WIDTH < 400 ? 18 : 24, height: SCREEN_WIDTH < 400 ? 18 : 24 }} 
                   resizeMode="contain"
                 />
               </View>
-              <View>
-                <Text style={[styles.cardTitle, { color: colors.text }]}>Day Streak</Text>
-                <View style={styles.streakValueContainer}>
-                  <Text style={[styles.streakValue, { color: colors.text }]}>{streakCount}</Text>
-                  <Text style={[styles.streakUnit, { color: colors.textTertiary }]}>days</Text>
+              <View style={{ flex: 1, flexShrink: 1 }}>
+                <Text style={[styles.cardTitle, SCREEN_WIDTH < 400 && { fontSize: 13 }, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>Day Streak</Text>
+                <View style={[styles.streakValueContainer, SCREEN_WIDTH < 400 && { marginTop: 0 }]}>
+                  <Text style={[styles.streakValue, SCREEN_WIDTH < 400 && { fontSize: 20 }, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{streakCount}</Text>
+                  <Text style={[styles.streakUnit, SCREEN_WIDTH < 400 && { fontSize: 11 }, { color: colors.textTertiary }]} numberOfLines={1}>days</Text>
                 </View>
               </View>
             </View>
 
-            <View style={styles.streakGrid}>
+            <View style={[styles.streakGrid, SCREEN_WIDTH < 400 && { paddingHorizontal: 0 }]}>
               {weekDays.map((date, index) => {
                 const dateStr = format(date, 'yyyy-MM-dd');
                 const isActive = weekActivity.has(dateStr);
                 const isToday = isSameDay(date, today);
 
                 return (
-                  <View key={index} style={styles.dayColumn}>
+                  <View key={index} style={[styles.dayColumn, SCREEN_WIDTH < 400 && { gap: 2 }]}>
                     <View style={[
-                      styles.circleIndicator, 
+                      styles.circleIndicator,
+                      SCREEN_WIDTH < 400 && { width: 12, height: 12, borderRadius: 6 }, 
                       { borderColor: colors.border },
                       isActive && styles.circleIndicatorActive,
                       isToday && !isActive && styles.circleIndicatorToday
                     ]}>
                       {isActive && (
-                        <HugeiconsIcon icon={CheckmarkCircle02Icon} size={14} color="#FFFFFF" />
+                        <HugeiconsIcon icon={CheckmarkCircle02Icon} size={SCREEN_WIDTH < 400 ? 10 : 14} color="#FFFFFF" />
                       )}
                     </View>
-                    <Text style={[styles.dayLabel, { color: colors.textMuted }, isToday && styles.dayLabelToday]}>
+                    <Text style={[styles.dayLabel, SCREEN_WIDTH < 400 && { fontSize: 8 }, { color: colors.textMuted }, isToday && styles.dayLabelToday]}>
                       {weekDayLabels[index]}
                     </Text>
                   </View>
@@ -246,15 +251,18 @@ export default function Analytics() {
             onPress={() => router.push('/update-weight' as any)}
             activeOpacity={0.8}
           >
-            <View style={styles.cardHeaderRow}>
-              <View style={[styles.iconContainer, { backgroundColor: colors.accentLight, width: 44, height: 44, borderRadius: 12, marginBottom: 0 }]}>
-                <HugeiconsIcon icon={ChampionIcon} size={24} color={colors.accent} />
+            <View style={[styles.cardHeaderRow, SCREEN_WIDTH < 400 && { gap: 4 }]}>
+              <View style={[
+                styles.iconContainer, 
+                { backgroundColor: colors.accentLight, width: SCREEN_WIDTH < 400 ? 36 : 44, height: SCREEN_WIDTH < 400 ? 36 : 44, borderRadius: 12, marginBottom: 0 }
+              ]}>
+                <HugeiconsIcon icon={ChampionIcon} size={SCREEN_WIDTH < 400 ? 18 : 24} color={colors.accent} />
               </View>
-              <View>
-                <Text style={[styles.cardTitle, { color: colors.text }]}>My Weight</Text>
-                <View style={styles.weightValueContainer}>
-                  <Text style={[styles.weightValue, { color: colors.text }]}>{weight}</Text>
-                  <Text style={[styles.weightUnit, { color: colors.textTertiary }]}>kg</Text>
+              <View style={{ flex: 1, flexShrink: 1 }}>
+                <Text style={[styles.cardTitle, SCREEN_WIDTH < 400 && { fontSize: 13 }, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>My Weight</Text>
+                <View style={[styles.weightValueContainer, SCREEN_WIDTH < 400 && { marginTop: 0 }]}>
+                  <Text style={[styles.weightValue, SCREEN_WIDTH < 400 && { fontSize: 20 }, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{weight}</Text>
+                  <Text style={[styles.weightUnit, SCREEN_WIDTH < 400 && { fontSize: 11 }, { color: colors.textTertiary }]} numberOfLines={1}>kg</Text>
                 </View>
               </View>
             </View>
@@ -488,7 +496,6 @@ const styles = StyleSheet.create({
   },
   halfCard: {
     flex: 1,
-    minHeight: 155, 
     justifyContent: 'space-between',
   },
   iconContainer: {
@@ -767,6 +774,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 16,
+    flexWrap: 'wrap',
+    gap: 12,
   },
   bigStreakCount: {
     fontSize: 48,
