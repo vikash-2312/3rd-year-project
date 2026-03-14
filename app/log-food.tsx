@@ -3,6 +3,7 @@ import { HugeiconsIcon } from '@hugeicons/react-native';
 import { useUser } from '@clerk/expo';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { format } from 'date-fns';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -86,9 +87,10 @@ export default function LogFoodScreen() {
         carbs: parseFloat(carbs) || 0,
         fat: parseFloat(fat) || 0,
         timestamp: serverTimestamp(),
-        date: new Date().toISOString().split('T')[0], // YYYY-MM-DD for grouping
+        date: format(new Date(), 'yyyy-MM-dd'), // Local date for grouping
       };
 
+      console.log('[LogFood] Saving log:', logData);
       await addDoc(collection(db, 'logs'), logData);
       
       Alert.alert('Success', 'Food logged successfully!', [

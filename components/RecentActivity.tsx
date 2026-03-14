@@ -1,14 +1,23 @@
-import { Activity01Icon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, FireIcon, Timer02Icon, OrganicFoodIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 type ActivityItem = {
   id: string;
+  type: 'food' | 'exercise' | 'water';
   name: string;
   calories: number;
   time: string;
-  icon?: string;
+  intensity?: string;
+  duration?: string;
+  description?: string;
+  serving?: string;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+  brand?: string;
 };
 
 type RecentActivityProps = {
@@ -17,6 +26,13 @@ type RecentActivityProps = {
 
 export function RecentActivity({ activities = [] }: RecentActivityProps) {
   const isEmpty = activities.length === 0;
+
+  const getExerciseIcon = (name: string) => {
+    const n = name.toLowerCase();
+    if (n.includes('run') || n.includes('cardio')) return 'fitness';
+    if (n.includes('lift') || n.includes('gym') || n.includes('weight')) return 'barbell';
+    return 'flash';
+  };
 
   return (
     <View style={styles.container}>
@@ -35,9 +51,71 @@ export function RecentActivity({ activities = [] }: RecentActivityProps) {
           </Text>
         </View>
       ) : (
-        <View style={styles.activityList}>
-          {activities.map((activity) => (
-            <View key={activity.id} style={styles.activityItem}>
+        activities.filter(activity => activity.type !== 'water').map((activity) => {
+            if (activity.type === 'exercise') {
+            return (
+              <View key={activity.id} style={styles.exerciseCard}>
+                <View style={styles.exerciseHeader}>
+                  <View style={styles.exerciseIconContainer}>
+                    <Ionicons name={getExerciseIcon(activity.name)} size={32} color="#009050" />
+                  </View>
+                  <View style={styles.exerciseInfo}>
+                    <Text style={styles.exerciseName}>{activity.name}</Text>
+                    <View style={styles.exerciseStats}>
+                      <View style={styles.calorieRow}>
+                        <HugeiconsIcon icon={FireIcon} size={14} color="#E53E3E" />
+                        <Text style={styles.exerciseCalories}>{activity.calories} kcal</Text>
+                      </View>
+                      <View style={styles.metaRow}>
+                        <Text style={styles.metaText}>{activity.intensity} Intensity</Text>
+                        <View style={styles.dot} />
+                        <Text style={styles.metaText}>{activity.duration} min</Text>
+                      </View>
+                    </View>
+                  </View>
+                  <Text style={styles.logTime}>{activity.time}</Text>
+                </View>
+              </View>
+            );
+          }
+
+          if (activity.type === 'food') {
+            return (
+              <View key={activity.id} style={styles.foodCard}>
+                <View style={styles.foodHeader}>
+                  <View style={styles.foodIconContainer}>
+                    <HugeiconsIcon icon={OrganicFoodIcon} size={30} color="#009050" />
+                  </View>
+                  <View style={styles.foodInfo}>
+                    <Text style={styles.foodName} numberOfLines={1}>{activity.name}</Text>
+                    <View style={styles.foodStats}>
+                      <View style={styles.calorieRow}>
+                        <HugeiconsIcon icon={FireIcon} size={14} color="#E53E3E" />
+                        <Text style={styles.foodCalories}>{activity.calories} kcal</Text>
+                      </View>
+                      <View style={styles.macroRow}>
+                        <Text style={styles.macroText}>P: {Math.round(activity.protein || 0)}g</Text>
+                        <View style={styles.miniDot} />
+                        <Text style={styles.macroText}>C: {Math.round(activity.carbs || 0)}g</Text>
+                        <View style={styles.miniDot} />
+                        <Text style={styles.macroText}>F: {Math.round(activity.fat || 0)}g</Text>
+                        {activity.serving ? (
+                          <>
+                            <View style={styles.miniDot} />
+                            <Text style={styles.macroText}>{activity.serving}</Text>
+                          </>
+                        ) : null}
+                      </View>
+                    </View>
+                  </View>
+                  <Text style={styles.logTime}>{activity.time}</Text>
+                </View>
+              </View>
+            );
+          }
+
+          return (
+            <View key={activity.id} style={styles.activityCard}>
               <View style={styles.activityIconCircle}>
                 <HugeiconsIcon icon={Activity01Icon} size={20} color="#009050" />
               </View>
@@ -47,8 +125,8 @@ export function RecentActivity({ activities = [] }: RecentActivityProps) {
               </View>
               <Text style={styles.activityCalories}>{activity.calories} cal</Text>
             </View>
-          ))}
-        </View>
+          );
+        })
       )}
     </View>
   );
@@ -107,23 +185,165 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Activity List (for when data exists)
-  activityList: {
+  // Common Card Shadow/Style
+  commonCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
     padding: 16,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 12,
     elevation: 3,
   },
-  activityItem: {
+
+  // Exercise Card Styling
+  exerciseCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  exerciseHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F7FAFC',
+  },
+  exerciseIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#F0FDF4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  exerciseInfo: {
+    flex: 1,
+  },
+  exerciseName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#2D3748',
+    marginBottom: 6,
+  },
+  exerciseStats: {
+    flexDirection: 'column',
+    gap: 4,
+  },
+  calorieRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  exerciseCalories: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#E53E3E',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  metaText: {
+    fontSize: 12,
+    color: '#718096',
+    fontWeight: '500',
+  },
+  dot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#CBD5E0',
+  },
+  logTime: {
+    fontSize: 12,
+    color: '#A0AEC0',
+    fontWeight: '500',
+    alignSelf: 'flex-start',
+  },
+
+  // Food Card Styling
+  foodCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  foodHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  foodIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  foodInfo: {
+    flex: 1,
+  },
+  foodName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#2D3748',
+    marginBottom: 6,
+  },
+  foodStats: {
+    flexDirection: 'column',
+    gap: 4,
+  },
+  foodCalories: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#E53E3E',
+  },
+  macroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  macroText: {
+    fontSize: 11,
+    color: '#718096',
+    fontWeight: '600',
+  },
+  miniDot: {
+    width: 2,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: '#CBD5E0',
+  },
+
+  activityList: {
+    // Wrapper no longer needs styling as items are cards
+  },
+  activityCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
   },
   activityIconCircle: {
     width: 40,

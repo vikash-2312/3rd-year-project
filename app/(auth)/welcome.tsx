@@ -37,7 +37,7 @@ export default function WelcomeScreen() {
               title="Get Started"
               onPress={() => {
                 console.log('[Welcome] Navigating to sign-up');
-                router.push('/sign-up');
+                router.push('/(auth)/sign-up');
               }}
               style={styles.signUpBtn}
             />
@@ -46,7 +46,7 @@ export default function WelcomeScreen() {
               style={styles.signInLink} 
               onPress={() => {
                 console.log('[Welcome] Navigating to sign-in');
-                router.push('/sign-in');
+                router.push('/(auth)/sign-in');
               }}
               activeOpacity={0.7}
             >

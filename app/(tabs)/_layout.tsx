@@ -2,29 +2,30 @@ import {
   Add01Icon,
   Analytics01Icon,
   Cancel01Icon,
-  CrownIcon,
-  Dumbbell01Icon,
   DropletIcon,
+  Dumbbell01Icon,
   Home01Icon,
   ScanIcon,
   SearchSquareIcon,
-  UserCircleIcon,
+  UserCircleIcon
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Tabs, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import * as ImagePicker from 'expo-image-picker';
 import {
-  Animated,
+  Dimensions,
   Modal,
   Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 
-export default function TabsLayout() {
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+function TabsLayout() {
   const [isModalVisible, setModalVisible] = useState(false);
   const [isPhotoModalVisible, setPhotoModalVisible] = useState(false);
   const router = useRouter();
@@ -36,13 +37,17 @@ export default function TabsLayout() {
   const handleOptionPress = (option: string) => {
     console.log(`[FAB] Option pressed: ${option}`);
     setModalVisible(false);
-    
+
     // Small delay to let the modal close before navigating
     setTimeout(() => {
       if (option === 'Food Database') {
         router.push('/food-search');
       } else if (option === 'Scan Food') {
         setPhotoModalVisible(true);
+      } else if (option === 'Log Exercise') {
+        router.push('/log-exercise');
+      } else if (option === 'Add Drink Water') {
+        router.push('/log-water');
       } else {
         console.log(`[FAB] Other option: ${option}`);
         // TODO: Navigate to the relevant screen for each option
@@ -52,8 +57,9 @@ export default function TabsLayout() {
 
   const pickImage = async (useCamera: boolean) => {
     setPhotoModalVisible(false);
-    
+
     try {
+      // Check if ImagePicker native module is available
       if (useCamera) {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         if (status !== 'granted') {
@@ -68,38 +74,41 @@ export default function TabsLayout() {
         }
       }
 
-      const result = useCamera 
+      const result = useCamera
         ? await ImagePicker.launchCameraAsync({
-            mediaTypes: 'images',
-            allowsEditing: true,
-            aspect: [4, 3],
-            quality: 0.8,
-            base64: true, // Tell image picker to generate base64 right away
-          })
+          mediaTypes: 'images',
+          allowsEditing: true,
+          aspect: [4, 3],
+          quality: 0.8,
+          base64: true,
+        })
         : await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: 'images',
-            allowsEditing: true,
-            aspect: [4, 3],
-            quality: 0.8,
-            base64: true, // Tell image picker to generate base64 right away
-          });
+          mediaTypes: 'images',
+          allowsEditing: true,
+          aspect: [4, 3],
+          quality: 0.8,
+          base64: true,
+        });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const imageUri = result.assets[0].uri;
         const base64Data = result.assets[0].base64 || '';
-        
-        // Navigate to analyzing screen with BOTH the URI limit (for display) and the Base64 data (for AI)
+
         router.push({
           pathname: '/analyze-food',
-          params: { 
+          params: {
             imageUri: encodeURIComponent(imageUri),
             imageBase64: encodeURIComponent(base64Data)
           }
         });
       }
-    } catch (error) {
-      console.error("Error picking image:", error);
-      alert('Failed to pick image. Please try again.');
+    } catch (error: any) {
+      if (error?.message?.includes('native module')) {
+        alert('Image Picker is not available in Expo Go. Please use a development build to scan food.');
+      } else {
+        console.error("Error picking image:", error);
+        alert('Failed to pick image. Please try again.');
+      }
     }
   };
 
@@ -112,6 +121,12 @@ export default function TabsLayout() {
           tabBarStyle: styles.tabBar,
           tabBarActiveTintColor: '#009050',
           tabBarInactiveTintColor: '#A0AEC0',
+
+          tabBarItemStyle: {
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+          }
         }}
       >
         <Tabs.Screen
@@ -137,24 +152,36 @@ export default function TabsLayout() {
           options={{
             title: 'Profile',
             tabBarIcon: ({ color }) => (
-              <HugeiconsIcon icon={UserCircleIcon} size={24} color={color} />
+              <HugeiconsIcon icon={UserCircleIcon} size={28} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="_placeholder"
+          options={{
+            title: '',
+            tabBarIcon: () => null,
+            tabBarButton: () => (
+              <View style={{ flex: 1, pointerEvents: 'none' }} />
             ),
           }}
         />
       </Tabs>
 
-      {/* Floating Action Button */}
-      <TouchableOpacity
-        style={[styles.fab, isModalVisible && styles.fabActive]}
-        onPress={() => isModalVisible ? setModalVisible(false) : handleFabPress()}
-        activeOpacity={0.8}
-      >
-        <HugeiconsIcon
-          icon={isModalVisible ? Cancel01Icon : Add01Icon}
-          size={25}
-          color="#FFFFFF"
-        />
-      </TouchableOpacity>
+      {/* Floating Action Button (Background trigger) */}
+      {!isModalVisible && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={handleFabPress}
+          activeOpacity={0.8}
+        >
+          <HugeiconsIcon
+            icon={Add01Icon}
+            size={25}
+            color="#FFFFFF"
+          />
+        </TouchableOpacity>
+      )}
 
       {/* Bottom Modal */}
       <Modal
@@ -168,9 +195,7 @@ export default function TabsLayout() {
         <Pressable style={styles.modalOverlay} onPress={() => setModalVisible(false)}>
           {/* Modal Content */}
           <Pressable style={styles.modalContent} onPress={(e) => { /* Prevent clicks from reaching overlay */ }}>
-            {/* Grid: 2 cards per row */}
             <View style={styles.optionsGrid}>
-              {/* Log Exercise */}
               <TouchableOpacity
                 style={styles.optionCard}
                 activeOpacity={0.7}
@@ -182,7 +207,6 @@ export default function TabsLayout() {
                 <Text style={styles.optionLabel}>Log Exercise</Text>
               </TouchableOpacity>
 
-              {/* Add Drink Water */}
               <TouchableOpacity
                 style={styles.optionCard}
                 activeOpacity={0.7}
@@ -194,7 +218,6 @@ export default function TabsLayout() {
                 <Text style={styles.optionLabel}>Add Drink Water</Text>
               </TouchableOpacity>
 
-              {/* Food Database */}
               <TouchableOpacity
                 style={styles.optionCard}
                 activeOpacity={0.7}
@@ -206,7 +229,6 @@ export default function TabsLayout() {
                 <Text style={styles.optionLabel}>Food Database</Text>
               </TouchableOpacity>
 
-              {/* Scan Food (Premium) */}
               <TouchableOpacity
                 style={styles.optionCard}
                 activeOpacity={0.7}
@@ -216,14 +238,22 @@ export default function TabsLayout() {
                   <HugeiconsIcon icon={ScanIcon} size={24} color="#009050" />
                 </View>
                 <Text style={styles.optionLabel}>Scan Food</Text>
-                {/* Premium Badge */}
-                <View style={styles.premiumBadge}>
-                  <HugeiconsIcon icon={CrownIcon} size={10} color="#D69E2E" />
-                  <Text style={styles.premiumText}>PRO</Text>
-                </View>
               </TouchableOpacity>
             </View>
           </Pressable>
+
+          {/* Fixed FAB Toggle inside Modal (to handle close) */}
+          <TouchableOpacity
+            style={[styles.fab, styles.fabActive]}
+            onPress={() => setModalVisible(false)}
+            activeOpacity={0.8}
+          >
+            <HugeiconsIcon
+              icon={Cancel01Icon}
+              size={25}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
         </Pressable>
       </Modal>
 
@@ -238,24 +268,24 @@ export default function TabsLayout() {
         <Pressable style={styles.modalOverlay} onPress={() => setPhotoModalVisible(false)}>
           <View style={styles.photoModalContent}>
             <Text style={styles.photoModalTitle}>Select Image Source</Text>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.photoOptionButton}
               onPress={() => pickImage(true)}
             >
               <Text style={styles.photoOptionText}>Take a Photo</Text>
             </TouchableOpacity>
-            
+
             <View style={styles.photoDivider} />
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.photoOptionButton}
               onPress={() => pickImage(false)}
             >
               <Text style={styles.photoOptionText}>Choose from Gallery</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.photoCancelButton}
               onPress={() => setPhotoModalVisible(false)}
             >
@@ -277,25 +307,19 @@ const styles = StyleSheet.create({
   tabBar: {
     position: 'absolute',
     bottom: 24,
-    left: 24,
-    right: 24,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 30,
+    marginHorizontal: 20,
+    left: 20,
+    right: 20,
     height: 60,
-    borderTopWidth: 0,
-    paddingBottom: 0,
-    paddingLeft: 16,
-    paddingRight: 64,
+    borderRadius: 30,
+    paddingHorizontal: 16,
+    paddingTop: 6
+
   },
   fab: {
     position: 'absolute',
-    bottom: 30,
-    right: 24,
+    bottom: 50, // Centered vertically in the 60px height tab bar ( (60-50)/2 + 24 )
+    left: 20 + ((SCREEN_WIDTH - 40) * 0.875) - 25, // Centered in the 4th slot of 4
     width: 50,
     height: 50,
     borderRadius: 25,
@@ -321,12 +345,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    backgroundColor: 'transparent',
     paddingTop: 24,
     paddingHorizontal: 20,
-    paddingBottom: 110, // Space to clear the floating tab bar + FAB
+    paddingBottom: 120, // Space to clear the floating tab bar + FAB
   },
   optionsGrid: {
     flexDirection: 'row',
@@ -335,14 +357,17 @@ const styles = StyleSheet.create({
   },
   optionCard: {
     width: '47%',
-    backgroundColor: '#F7FAFC',
-    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
     paddingVertical: 20,
     paddingHorizontal: 16,
     alignItems: 'center',
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#EDF2F7',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 4,
     position: 'relative',
   },
   optionIconCircle: {
@@ -423,3 +448,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   }
 });
+
+export default TabsLayout;
