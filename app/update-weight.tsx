@@ -3,7 +3,7 @@ import { ArrowLeft02Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { format } from "date-fns";
 import { useRouter } from "expo-router";
-import { addDoc, collection, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -57,13 +57,31 @@ export default function UpdateWeight() {
         'updatedAt': serverTimestamp()
       });
 
-      // 2. Log Weight Change for graphing later
-      await addDoc(collection(db, 'weight_logs'), {
-        userId: user.id,
-        weightKg: selectedWeight,
-        date: todayStr,
-        timestamp: serverTimestamp()
-      });
+      // 2. Log Weight Change for graphing later (Keep only one log per day)
+      const weightLogsRef = collection(db, 'weight_logs');
+      const q = query(
+        weightLogsRef,
+        where('userId', '==', user.id),
+        where('date', '==', todayStr)
+      );
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        // Update the existing document for today
+        const existingDoc = querySnapshot.docs[0];
+        await updateDoc(doc(db, 'weight_logs', existingDoc.id), {
+          weightKg: selectedWeight,
+          timestamp: serverTimestamp()
+        });
+      } else {
+        // Create a new document for today
+        await addDoc(weightLogsRef, {
+          userId: user.id,
+          weightKg: selectedWeight,
+          date: todayStr,
+          timestamp: serverTimestamp()
+        });
+      }
 
       router.back();
     } catch (error) {

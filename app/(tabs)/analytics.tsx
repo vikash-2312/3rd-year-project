@@ -1,24 +1,27 @@
 import { useUser } from "@clerk/expo";
-import { CheckmarkCircle02Icon, ChampionIcon, Cancel01Icon } from '@hugeicons/core-free-icons';
+import { CheckmarkCircle02Icon, ChampionIcon, Cancel01Icon, FireIcon, Apple01Icon, Activity01Icon, DropletIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { addDays, format, isSameDay, startOfWeek, subDays } from "date-fns";
 import { useRouter } from "expo-router";
 import { collection, doc, onSnapshot, query, where } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Dimensions, Image, ScrollView, StyleSheet, Text, View, TouchableOpacity, Modal, Pressable } from "react-native";
-import { BarChart } from "react-native-chart-kit";
+import { BarChart, LineChart } from "react-native-chart-kit";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { db } from "../../lib/firebase";
+import { useTheme } from "../../lib/ThemeContext";
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function Analytics() {
   const { user } = useUser();
   const router = useRouter();
+  const { colors, isDark } = useTheme();
   const [userData, setUserData] = useState<any>(null);
   const [weekActivity, setWeekActivity] = useState<Set<string>>(new Set());
   const [dailyConsumed, setDailyConsumed] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
   const [dailyBurned, setDailyBurned] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
+  const [dailyWater, setDailyWater] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
   const [isLoading, setIsLoading] = useState(true);
   const [isStreakModalVisible, setIsStreakModalVisible] = useState(false);
 
@@ -42,17 +45,18 @@ export default function Analytics() {
     const startStr = format(weekStart, 'yyyy-MM-dd');
     const endStr = format(addDays(weekStart, 6), 'yyyy-MM-dd');
 
+    // Fetch all user logs to calculate true historical streak
+    // Weekly charts will automatically filter relevant dates via `weekDays.map`
     const logsQuery = query(
       collection(db, 'logs'),
-      where('userId', '==', user.id),
-      where('date', '>=', startStr),
-      where('date', '<=', endStr)
+      where('userId', '==', user.id)
     );
 
     const unsubscribeLogs = onSnapshot(logsQuery, (snapshot) => {
       const activeDays = new Set<string>();
       const consumedByDay: Record<string, number> = {};
       const burnedByDay: Record<string, number> = {};
+      const waterByDay: Record<string, number> = {};
 
       snapshot.docs.forEach(doc => {
         const data = doc.data();
@@ -64,18 +68,22 @@ export default function Analytics() {
             consumedByDay[data.date] = (consumedByDay[data.date] || 0) + cal;
           } else if (data.type === 'exercise') {
             burnedByDay[data.date] = (burnedByDay[data.date] || 0) + cal;
+          } else if (data.type === 'water') {
+            waterByDay[data.date] = (waterByDay[data.date] || 0) + (data.waterLiters || 0);
           }
         }
       });
 
       setWeekActivity(activeDays);
 
-      // Map calories to the 7-day array
+      // Map calories and water to the 7-day array
       const consArr = weekDays.map(d => Math.round(consumedByDay[format(d, 'yyyy-MM-dd')] || 0));
       const burnArr = weekDays.map(d => Math.round(burnedByDay[format(d, 'yyyy-MM-dd')] || 0));
+      const waterArr = weekDays.map(d => Number((waterByDay[format(d, 'yyyy-MM-dd')] || 0).toFixed(1)));
       
       setDailyConsumed(consArr);
       setDailyBurned(burnArr);
+      setDailyWater(waterArr);
       setIsLoading(false);
     });
 
@@ -102,8 +110,8 @@ export default function Analytics() {
       }
     }
 
-    // Iterate backward
-    while (count < 7) {
+    // Iterate backward through all active days
+    while (true) {
       if (weekActivity.has(format(checkDate, 'yyyy-MM-dd'))) {
         count++;
         checkDate = subDays(checkDate, 1);
@@ -145,16 +153,27 @@ export default function Analytics() {
     ]
   };
 
+  const waterChartData = {
+    labels: weekDayLabels,
+    datasets: [
+      {
+        data: dailyWater.some(val => val > 0) ? dailyWater : [0, 0, 0, 0, 0, 0, 0], // avoid min curve rendering issues if completely 0
+        color: (opacity = 1) => `rgba(49, 130, 206, ${opacity})`, // Blue Line (#3182CE)
+        strokeWidth: 3
+      }
+    ]
+  };
+
   const chartConfig = {
-    backgroundGradientFrom: '#FFFFFF',
-    backgroundGradientTo: '#FFFFFF',
+    backgroundGradientFrom: colors.chartBg,
+    backgroundGradientTo: colors.chartBg,
     decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(45, 55, 72, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(113, 128, 150, ${opacity})`,
-    barPercentage: 0.7, // Slightly wider bars for the interleaved view
+    color: (opacity = 1) => isDark ? `rgba(226, 232, 240, ${opacity})` : `rgba(45, 55, 72, ${opacity})`,
+    labelColor: (opacity = 1) => isDark ? `rgba(160, 174, 192, ${opacity})` : `rgba(113, 128, 150, ${opacity})`,
+    barPercentage: 0.7,
     propsForBackgroundLines: {
       strokeDasharray: '4',
-      stroke: '#EDF2F7',
+      stroke: colors.border,
     },
   };
 
@@ -167,29 +186,32 @@ export default function Analytics() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <Text style={styles.headerTitle}>Progress</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Progress</Text>
 
-        <View style={styles.row}>
+          <View style={styles.row}>
           {/* Daily Streak Card */}
           <TouchableOpacity 
-            style={[styles.card, styles.halfCard]} 
+            style={[styles.card, styles.halfCard, { backgroundColor: colors.card }]} 
             onPress={() => setIsStreakModalVisible(true)}
             activeOpacity={0.8}
           >
-            <View style={styles.iconContainer}>
-              <Image 
-                source={require('../../assets/images/fire.png')} 
-                style={styles.fireIcon} 
-                resizeMode="contain"
-              />
-            </View>
-            <Text style={styles.cardTitle}>Day Streak</Text>
-            
-            <View style={styles.streakValueContainer}>
-              <Text style={styles.streakValue}>{streakCount}</Text>
-              <Text style={styles.streakUnit}>days</Text>
+            <View style={styles.cardHeaderRow}>
+              <View style={[styles.iconContainer, { width: 44, height: 44, borderRadius: 12, marginBottom: 0 }]}>
+                <Image 
+                  source={require('../../assets/images/fire.png')} 
+                  style={{ width: 24, height: 24 }} 
+                  resizeMode="contain"
+                />
+              </View>
+              <View>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>Day Streak</Text>
+                <View style={styles.streakValueContainer}>
+                  <Text style={[styles.streakValue, { color: colors.text }]}>{streakCount}</Text>
+                  <Text style={[styles.streakUnit, { color: colors.textTertiary }]}>days</Text>
+                </View>
+              </View>
             </View>
 
             <View style={styles.streakGrid}>
@@ -201,15 +223,16 @@ export default function Analytics() {
                 return (
                   <View key={index} style={styles.dayColumn}>
                     <View style={[
-                      styles.checkBox, 
-                      isActive && styles.checkBoxActive,
-                      isToday && !isActive && styles.checkBoxToday
+                      styles.circleIndicator, 
+                      { borderColor: colors.border },
+                      isActive && styles.circleIndicatorActive,
+                      isToday && !isActive && styles.circleIndicatorToday
                     ]}>
                       {isActive && (
                         <HugeiconsIcon icon={CheckmarkCircle02Icon} size={14} color="#FFFFFF" />
                       )}
                     </View>
-                    <Text style={[styles.dayLabel, isToday && styles.dayLabelToday]}>
+                    <Text style={[styles.dayLabel, { color: colors.textMuted }, isToday && styles.dayLabelToday]}>
                       {weekDayLabels[index]}
                     </Text>
                   </View>
@@ -218,51 +241,75 @@ export default function Analytics() {
             </View>
           </TouchableOpacity>
 
-          {/* My Weight Card */}
           <TouchableOpacity 
-            style={[styles.card, styles.halfCard]}
+            style={[styles.card, styles.halfCard, { justifyContent: 'space-between', backgroundColor: colors.card }]}
             onPress={() => router.push('/update-weight' as any)}
             activeOpacity={0.8}
           >
-            <View style={[styles.iconContainer, { backgroundColor: '#F0FFF4' }]}>
-               <HugeiconsIcon icon={ChampionIcon} size={24} color="#009050" />
+            <View style={styles.cardHeaderRow}>
+              <View style={[styles.iconContainer, { backgroundColor: colors.accentLight, width: 44, height: 44, borderRadius: 12, marginBottom: 0 }]}>
+                <HugeiconsIcon icon={ChampionIcon} size={24} color={colors.accent} />
+              </View>
+              <View>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>My Weight</Text>
+                <View style={styles.weightValueContainer}>
+                  <Text style={[styles.weightValue, { color: colors.text }]}>{weight}</Text>
+                  <Text style={[styles.weightUnit, { color: colors.textTertiary }]}>kg</Text>
+                </View>
+              </View>
             </View>
-            <Text style={styles.cardTitle}>My Weight</Text>
-            <View style={styles.weightValueContainer}>
-              <Text style={styles.weightValue}>{weight}</Text>
-              <Text style={styles.weightUnit}>kg</Text>
-            </View>
-            <Text style={styles.weightSubtitle}>Current Status</Text>
+            
+            <Text style={[styles.weightSubtitle, { marginBottom: 8, color: colors.textMuted }]}>Current Status</Text>
           </TouchableOpacity>
         </View>
 
+        {/* AI Health Insights Card */}
+        <TouchableOpacity 
+          style={[styles.card, styles.aiCard, { backgroundColor: colors.purpleLight, borderColor: colors.purpleBorder }]}
+          onPress={() => router.push('/ai-insights' as any)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.aiCardContent}>
+            <View style={[styles.aiIconContainer, { backgroundColor: colors.purple }]}>
+              <HugeiconsIcon icon={Activity01Icon} size={28} color="#FFFFFF" />
+            </View>
+            <View style={styles.aiTextContainer}>
+              <Text style={[styles.aiTitle, { color: colors.purpleText }]}>AI Health Insights</Text>
+              <Text style={[styles.aiSubtitle, { color: colors.purpleSubtext }]}>Discover how your weekly meals affect your long-term health.</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+
         {/* Weekly Energy Card */}
-        <View style={[styles.card, styles.energyCard]}>
-          <Text style={styles.cardHeaderTitle}>Weekly Energy</Text>
-          
+        <View style={[styles.card, styles.energyCard, { backgroundColor: colors.card }]}>
+          <Text style={[styles.cardHeaderTitle, { color: colors.text }]}>Weekly Energy</Text>
           <View style={styles.energyStatsRow}>
             <View style={styles.energyStatItem}>
-              <Text style={[styles.energyStatValue, styles.burnedValue]}>{totalBurned.toLocaleString()}</Text>
-              <Text style={styles.energyStatLabel}>Burned</Text>
+              <Text style={[styles.energyStatValue, styles.burnedValue, { color: colors.danger }]}>
+                {totalBurned.toLocaleString()}
+              </Text>
+              <Text style={[styles.energyStatLabel, { color: colors.textTertiary }]}>Burned</Text>
             </View>
-            <View style={styles.energyStatDivider} />
+
             <View style={styles.energyStatItem}>
-              <Text style={[styles.energyStatValue, styles.consumedValue]}>{totalConsumed.toLocaleString()}</Text>
-              <Text style={styles.energyStatLabel}>Consumed</Text>
+              <Text style={[styles.energyStatValue, styles.consumedValue, { color: colors.accent }]}>
+                {totalConsumed.toLocaleString()}
+              </Text>
+              <Text style={[styles.energyStatLabel, { color: colors.textTertiary }]}>Consumed</Text>
             </View>
-            <View style={styles.energyStatDivider} />
+
             <View style={styles.energyStatItem}>
               <Text style={[styles.energyStatValue, styles.netValue]}>
                 {netEnergy > 0 ? `+${netEnergy.toLocaleString()}` : netEnergy.toLocaleString()}
               </Text>
-              <Text style={styles.energyStatLabel}>Net Energy</Text>
+              <Text style={[styles.energyStatLabel, { color: colors.textTertiary }]}>Net</Text>
             </View>
           </View>
 
           <View style={styles.chartWrapper}>
             <BarChart
               data={energyChartData}
-              width={SCREEN_WIDTH - 32} // More width for 14 bars
+              width={SCREEN_WIDTH - 88}
               height={220}
               chartConfig={chartConfig}
               style={styles.energyChart}
@@ -275,15 +322,55 @@ export default function Analytics() {
             />
           </View>
 
-          <View style={styles.legendContainer}>
+          <View style={[styles.legendContainer, { borderTopColor: colors.border }]}>
             <View style={styles.legendItem}>
-              <View style={[styles.legendIndicator, { backgroundColor: '#009050' }]} />
-              <Text style={styles.legendText}>Consumed</Text>
+              <View style={[styles.legendIndicator, { backgroundColor: colors.accent }]} />
+              <Text style={[styles.legendText, { color: colors.textSecondary }]}>Consumed</Text>
             </View>
             <View style={styles.legendItem}>
-              <View style={[styles.legendIndicator, { backgroundColor: '#E53E3E' }]} />
-              <Text style={styles.legendText}>Burned</Text>
+              <View style={[styles.legendIndicator, { backgroundColor: colors.danger }]} />
+              <Text style={[styles.legendText, { color: colors.textSecondary }]}>Burned</Text>
             </View>
+          </View>
+        </View>
+
+        {/* Water Consumption Card */}
+        <View style={[styles.card, styles.energyCard, { backgroundColor: colors.card }]}>
+          <Text style={[styles.cardHeaderTitle, { color: colors.text }]}>Water Consumption</Text>
+          <View style={styles.energyStatsRow}>
+            <View style={styles.energyStatItem}>
+              <Text style={[styles.energyStatValue, { color: colors.blue }]}>
+                {dailyWater.reduce((a, b) => a + b, 0).toFixed(1)} L
+              </Text>
+              <Text style={[styles.energyStatLabel, { color: colors.textTertiary }]}>Total This Week</Text>
+            </View>
+
+            <View style={styles.energyStatItem}>
+              <Text style={[styles.energyStatValue, { color: colors.text }]}>
+                {(dailyWater.reduce((a, b) => a + b, 0) / 7).toFixed(1)} L
+              </Text>
+              <Text style={[styles.energyStatLabel, { color: colors.textTertiary }]}>Daily Average</Text>
+            </View>
+          </View>
+
+          <View style={styles.chartWrapper}>
+            <LineChart
+              data={waterChartData}
+              width={SCREEN_WIDTH - 88}
+              height={220}
+              chartConfig={{
+                ...chartConfig,
+                decimalPlaces: 1, // Display labels nicely with 1 decimal
+              }}
+              style={styles.energyChart}
+              fromZero
+              bezier
+              withInnerLines={true}
+              withOuterLines={false}
+              withVerticalLines={false}
+              yAxisSuffix="L"
+              yAxisLabel=""
+            />
           </View>
         </View>
 
@@ -298,11 +385,11 @@ export default function Analytics() {
             style={styles.modalOverlay} 
             onPress={() => setIsStreakModalVisible(false)}
           >
-            <Pressable style={styles.modalDialog} onPress={(e) => e.stopPropagation()}>
+            <Pressable style={[styles.modalDialog, { backgroundColor: colors.card }]} onPress={(e) => e.stopPropagation()}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Daily Streak Details</Text>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Daily Streak Details</Text>
                 <TouchableOpacity onPress={() => setIsStreakModalVisible(false)}>
-                  <HugeiconsIcon icon={Cancel01Icon} size={24} color="#2D3748" />
+                  <HugeiconsIcon icon={Cancel01Icon} size={24} color={colors.text} />
                 </TouchableOpacity>
               </View>
 
@@ -317,12 +404,12 @@ export default function Analytics() {
                 
                 <View style={styles.streakMainRow}>
                   <View>
-                    <Text style={styles.bigStreakCount}>{streakCount}</Text>
-                    <Text style={styles.bigStreakLabel}>Day Streak</Text>
+                    <Text style={[styles.bigStreakCount, { color: colors.text }]}>{streakCount}</Text>
+                    <Text style={[styles.bigStreakLabel, { color: colors.textTertiary }]}>Day Streak</Text>
                   </View>
                   
-                  <View style={styles.streakChip}>
-                    <Text style={styles.streakChipText}>Keep it Going 🔥</Text>
+                  <View style={[styles.streakChip, { backgroundColor: isDark ? '#3B1A1A' : '#FFF5F5', borderColor: isDark ? '#FC8181' : '#FED7D7' }]}>
+                    <Text style={[styles.streakChipText, { color: colors.danger }]}>Keep it Going 🔥</Text>
                   </View>
                 </View>
 
@@ -335,16 +422,16 @@ export default function Analytics() {
                     return (
                       <View key={index} style={[styles.dayColumn, { gap: 8 }]}>
                         <View style={[
-                          styles.checkBox, 
-                          { width: 28, height: 28, borderRadius: 8 },
-                          isActive && styles.checkBoxActive,
-                          isToday && !isActive && styles.checkBoxToday
+                          styles.circleIndicator, 
+                          { width: 28, height: 28, borderRadius: 14, borderColor: colors.border },
+                          isActive && styles.circleIndicatorActive,
+                          isToday && !isActive && styles.circleIndicatorToday
                         ]}>
                           {isActive && (
                             <HugeiconsIcon icon={CheckmarkCircle02Icon} size={20} color="#FFFFFF" />
                           )}
                         </View>
-                        <Text style={[styles.dayLabel, { fontSize: 12 }, isToday && styles.dayLabelToday]}>
+                        <Text style={[styles.dayLabel, { fontSize: 12, color: colors.textMuted }, isToday && styles.dayLabelToday]}>
                           {weekDayLabels[index]}
                         </Text>
                       </View>
@@ -363,13 +450,13 @@ export default function Analytics() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F7FAFC',
+    backgroundColor: '#ECFDF5',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F7FAFC',
+    backgroundColor: '#ECFDF5',
   },
   container: {
     flex: 1,
@@ -401,7 +488,8 @@ const styles = StyleSheet.create({
   },
   halfCard: {
     flex: 1,
-    minHeight: 185,
+    minHeight: 155, 
+    justifyContent: 'space-between',
   },
   iconContainer: {
     width: 44,
@@ -419,36 +507,42 @@ const styles = StyleSheet.create({
   weightEmoji: {
     fontSize: 24,
   },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
   cardTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
     color: '#2D3748',
-    marginBottom: 16,
   },
   streakGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
+    paddingHorizontal: 2, 
   },
   dayColumn: {
     alignItems: 'center',
     gap: 4,
   },
-  checkBox: {
-    width: 18, // Slightly smaller to fit in row
-    height: 18,
-    borderRadius: 5,
+  circleIndicator: {
+    width: 14, 
+    height: 14,
+    borderRadius: 7, 
     borderWidth: 1.5,
     borderColor: '#EDF2F7',
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  checkBoxActive: {
+  circleIndicatorActive: {
     backgroundColor: '#009050',
     borderColor: '#009050',
   },
-  checkBoxToday: {
+  circleIndicatorToday: {
     borderColor: '#009050',
     borderStyle: 'dashed',
   },
@@ -463,40 +557,77 @@ const styles = StyleSheet.create({
   weightValueContainer: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    marginTop: 4,
+    marginTop: 2,
   },
   weightValue: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '800',
     color: '#2D3748',
   },
   weightUnit: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#718096',
     marginLeft: 4,
   },
   weightSubtitle: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#A0AEC0',
-    marginTop: 8,
+    marginTop: 4,
     fontWeight: '500',
   },
   streakValueContainer: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    marginBottom: 8,
+    marginTop: 2,
   },
   streakValue: {
-    fontSize: 32,
-    fontWeight: '800',
+    fontSize: 28, 
+    fontWeight: '900', 
     color: '#2D3748',
   },
   streakUnit: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#718096',
     marginLeft: 4,
+  },
+
+  // AI Insights Card Styles
+  aiCard: {
+    marginTop: 20,
+    backgroundColor: '#FAF5FF',
+    borderColor: '#E9D8FD',
+    borderWidth: 1,
+  },
+  aiCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    padding: 8,
+  },
+  aiIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: '#805AD5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  aiTextContainer: {
+    flex: 1,
+  },
+  aiTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#322659',
+    marginBottom: 4,
+  },
+  aiSubtitle: {
+    fontSize: 13,
+    color: '#553C9A',
+    fontWeight: '500',
+    lineHeight: 18,
   },
 
   // Chart Card Styles
@@ -542,14 +673,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 24,
-    paddingHorizontal: 4,
   },
   energyStatItem: {
     alignItems: 'center',
     flex: 1,
   },
   energyStatValue: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '800',
     color: '#2D3748',
   },
@@ -560,22 +690,16 @@ const styles = StyleSheet.create({
     color: '#009050',
   },
   netValue: {
-    color: '#D69E2E', // Solid yellow/gold for readability
+    color: '#D69E2E', 
   },
   energyStatLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#718096',
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  energyStatDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: '#EDF2F7',
+    fontWeight: '700',
+    textTransform: 'uppercase',
   },
   chartWrapper: {
     alignItems: 'center',
-    marginLeft: -16, // Adjust for chart padding
   },
   energyChart: {
     borderRadius: 16,

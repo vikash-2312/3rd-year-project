@@ -4,10 +4,12 @@ import { useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Notification01Icon } from '@hugeicons/core-free-icons';
+import { useTheme } from '../lib/ThemeContext';
 
 export function HomeHeader() {
   const { user } = useUser();
   const router = useRouter();
+  const { colors } = useTheme();
 
   const name = user?.fullName || user?.primaryEmailAddress?.emailAddress?.split('@')[0] || 'User';
   const imageUrl = user?.imageUrl;
@@ -23,17 +25,16 @@ export function HomeHeader() {
           </View>
         )}
         <View style={styles.textContainer}>
-          <Text style={styles.welcomeText}>Welcome Back,</Text>
-          <Text style={styles.nameText}>{name}</Text>
+          <Text style={[styles.welcomeText, { color: colors.textTertiary }]}>Welcome Back,</Text>
+          <Text style={[styles.nameText, { color: colors.text }]}>{name}</Text>
         </View>
       </View>
 
       <TouchableOpacity 
-        style={styles.notificationButton}
+        style={[styles.notificationButton, { backgroundColor: colors.card }]}
         onPress={() => router.push('/notifications' as any)}
       >
-        {/* We will replace Notification01Icon if it doesn't exist */}
-        <HugeiconsIcon icon={Notification01Icon} size={24} color="#2D3748" />
+        <HugeiconsIcon icon={Notification01Icon} size={24} color={colors.text} />
         <View style={styles.notificationDot} />
       </TouchableOpacity>
     </View>

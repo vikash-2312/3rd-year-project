@@ -32,6 +32,7 @@ if (!publishableKey) {
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useUser } from '@clerk/expo';
+import { ThemeProvider } from '../lib/ThemeContext';
 
 const InitialLayout = () => {
   const { isSignedIn, isLoaded } = useAuth();
@@ -138,7 +139,9 @@ export default function RootLayout() {
   return (
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
       <ClerkLoaded>
-        <InitialLayout />
+        <ThemeProvider>
+          <InitialLayout />
+        </ThemeProvider>
       </ClerkLoaded>
     </ClerkProvider>
   );

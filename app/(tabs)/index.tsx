@@ -1,24 +1,29 @@
 import { useUser } from "@clerk/expo";
 import { collection, doc, getDoc, limit, onSnapshot, query, where } from "firebase/firestore";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { format } from "date-fns";
 import { Button } from "../../components/Button";
-import { CaloriesCard } from "../../components/CaloriesCard";
+import { CaloriesCard, CaloriesCardRef } from "../../components/CaloriesCard";
 import { HomeHeader } from "../../components/HomeHeader";
 import { RecentActivity } from "../../components/RecentActivity";
 import { WaterCard } from "../../components/WaterCard";
 import { WeeklyCalendar } from "../../components/WeeklyCalendar";
+import { HealthScoreCard } from "../../components/HealthScoreCard";
 import { db } from "../../lib/firebase";
+import { useTheme } from "../../lib/ThemeContext";
 
 export default function Home() {
   const { user } = useUser();
+  const { colors } = useTheme();
 
   const [userData, setUserData] = useState<any>(null);
   const [logs, setLogs] = useState<any[]>([]);
   const [isLoadingProps, setIsLoadingProps] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  
+  const caloriesCardRef = useRef<CaloriesCardRef>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -95,7 +100,8 @@ export default function Home() {
     carbs: acc.carbs + (log.carbs || 0),
     fats: acc.fats + (log.fat || 0),
     water: acc.water + (log.waterLiters || 0),
-  }), { calories: 0, protein: 0, carbs: 0, fats: 0, water: 0 });
+    exerciseMinutes: acc.exerciseMinutes + (log.type === 'exercise' ? (log.duration || 0) : 0),
+  }), { calories: 0, protein: 0, carbs: 0, fats: 0, water: 0, exerciseMinutes: 0 });
 
   // Safely extract target macro values
   const targets = userData?.profile?.macros || {};
@@ -108,20 +114,22 @@ export default function Home() {
   const consumedWaterLiters = consumedMacros.water;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <HomeHeader />
         <WeeklyCalendar selectedDate={selectedDate} onDateSelect={setSelectedDate} />
 
         {isLoadingProps ? (
-          <ActivityIndicator size="large" color="#009050" style={{ marginVertical: 40 }} />
+          <ActivityIndicator size="large" color={colors.accent} style={{ marginVertical: 40 }} />
         ) : (
           <>
             <CaloriesCard
+              ref={caloriesCardRef}
               targetCalories={dailyCalories}
               targetProtein={targets.proteinGrams || 150}
               targetCarbs={targets.carbsGrams || 200}
               targetFats={targets.fatsGrams || 60}
+              targetWaterLiters={targetWaterLiters}
               remaining={remainingCalories}
               progress={progress}
               protein={Math.round(consumedMacros.protein)}
@@ -131,6 +139,18 @@ export default function Home() {
             <WaterCard
               targetLiters={targetWaterLiters}
               consumedLiters={consumedWaterLiters}
+              onEditPress={() => caloriesCardRef.current?.openEditModal()}
+            />
+            
+            <HealthScoreCard
+              weightKg={userData?.profile?.measurements?.weightKg || userData?.onboarding_weight || 70}
+              protein={consumedMacros.protein}
+              carbs={consumedMacros.carbs}
+              fat={consumedMacros.fats}
+              exerciseMinutes={consumedMacros.exerciseMinutes}
+              waterLiters={consumedMacros.water}
+              caloriesConsumed={consumedMacros.calories}
+              calorieGoal={dailyCalories}
             />
           </>
         )}
@@ -146,7 +166,6 @@ export default function Home() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#ECFDF5', // Light green background matching the image top gradient
   },
   container: {
     flex: 1,

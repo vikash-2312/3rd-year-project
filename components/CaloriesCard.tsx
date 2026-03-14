@@ -1,12 +1,13 @@
-import { AvocadoIcon, BeefIcon, Bread01Icon, PencilEdit02Icon } from '@hugeicons/core-free-icons';
+import { AvocadoIcon, BeefIcon, Bread01Icon, PencilEdit02Icon, Cancel01Icon, FireIcon, DropletIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { useUser } from '@clerk/expo';
 import { doc, updateDoc } from 'firebase/firestore';
-import React, { useState } from 'react';
-import { Alert, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import { Alert, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View, Dimensions } from 'react-native';
 import { db } from '../lib/firebase';
 import { Button } from './Button'; // Assuming you have a Button component
-import { SegmentedHalfCircleProgress30 } from './Halfprogress'; // Adjust path if needed
+import { SegmentedHalfCircleProgress30 } from './Halfprogress';
+import { useTheme } from '../lib/ThemeContext';
 
 type CaloriesCardProps = {
   targetCalories: number;
@@ -18,13 +19,19 @@ type CaloriesCardProps = {
   protein: number;
   carbs: number;
   fats: number;
+  targetWaterLiters: number;
 };
 
-export function CaloriesCard({ 
-  targetCalories, targetProtein, targetCarbs, targetFats,
+export interface CaloriesCardRef {
+  openEditModal: () => void;
+}
+
+export const CaloriesCard = forwardRef<CaloriesCardRef, CaloriesCardProps>(({ 
+  targetCalories, targetProtein, targetCarbs, targetFats, targetWaterLiters,
   remaining, progress, protein, carbs, fats 
-}: CaloriesCardProps) {
+}, ref) => {
   const { user } = useUser();
+  const { colors, isDark } = useTheme();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
@@ -33,14 +40,20 @@ export function CaloriesCard({
   const [editProtein, setEditProtein] = useState(targetProtein.toString());
   const [editCarbs, setEditCarbs] = useState(targetCarbs.toString());
   const [editFats, setEditFats] = useState(targetFats.toString());
+  const [editWater, setEditWater] = useState(targetWaterLiters.toString());
 
   const openEditModal = () => {
     setEditCalories(targetCalories.toString());
     setEditProtein(targetProtein.toString());
     setEditCarbs(targetCarbs.toString());
     setEditFats(targetFats.toString());
+    setEditWater(targetWaterLiters.toString());
     setIsModalVisible(true);
   };
+
+  useImperativeHandle(ref, () => ({
+    openEditModal
+  }));
 
   const handleSave = async () => {
     if (!user) return;
@@ -54,6 +67,7 @@ export function CaloriesCard({
         proteinGrams: parseInt(editProtein) || 0,
         carbsGrams: parseInt(editCarbs) || 0,
         fatsGrams: parseInt(editFats) || 0,
+        waterLiters: parseFloat(editWater) || 0,
       };
 
       // update specifically the macros sub-object
@@ -62,6 +76,7 @@ export function CaloriesCard({
         'profile.macros.proteinGrams': newMacros.proteinGrams,
         'profile.macros.carbsGrams': newMacros.carbsGrams,
         'profile.macros.fatsGrams': newMacros.fatsGrams,
+        'profile.macros.waterIntakeLiters': newMacros.waterLiters,
       });
 
       setIsModalVisible(false);
@@ -73,19 +88,16 @@ export function CaloriesCard({
     }
   };
   return (
-    <View style={styles.cardContainer}>
-      {/* Header Row */}
+    <View style={[styles.cardContainer, { backgroundColor: colors.card }]}>
       <View style={styles.headerRow}>
         <View style={styles.headerLeft}>
-          {/* <FireIcon size={20} color="#FF6B6B" variant="solid" style={styles.iconSpaced} /> */}
-          <Text style={styles.titleText}>Calories</Text>
+          <Text style={[styles.titleText, { color: colors.text }]}>Calories</Text>
         </View>
         <TouchableOpacity style={styles.editButton} activeOpacity={0.7} onPress={openEditModal}>
-          <HugeiconsIcon icon={PencilEdit02Icon} size={20} color="#009050" />
+          <HugeiconsIcon icon={PencilEdit02Icon} size={20} color={colors.accent} />
         </TouchableOpacity>
       </View>
 
-      {/* Progress Arc Area */}
       <View style={styles.progressContainer}>
         <SegmentedHalfCircleProgress30
           progress={progress}
@@ -98,103 +110,157 @@ export function CaloriesCard({
         />
       </View>
 
-      {/* Macronutrient Row */}
       <View style={styles.macroRow}>
-        {/* Protein Block */}
-        <View style={[styles.macroBlock, styles.proteinBlock]}>
-          <HugeiconsIcon icon={BeefIcon} size={20} color="#E53E3E" />
+        <View style={[styles.macroBlock, { backgroundColor: isDark ? '#3B1A1A' : '#FFF5F5' }]}>
+          <HugeiconsIcon icon={BeefIcon} size={20} color={isDark ? '#FC8181' : '#E53E3E'} />
           <View style={styles.macroTextContainer}>
-            <Text style={[styles.macroValue, { color: '#E53E3E' }]}>{protein}g</Text>
-            <Text style={styles.macroLabel}>Protein</Text>
+            <Text style={[styles.macroValue, { color: isDark ? '#FC8181' : '#E53E3E' }]}>{protein}g</Text>
+            <Text style={[styles.macroLabel, { color: colors.textTertiary }]}>Protein</Text>
           </View>
         </View>
 
-        {/* Carbs Block */}
-        <View style={[styles.macroBlock, styles.carbsBlock]}>
-          <HugeiconsIcon icon={Bread01Icon} size={20} color="#DD6B20" />
+        <View style={[styles.macroBlock, { backgroundColor: isDark ? '#3B2A1A' : '#FFFBEB' }]}>
+          <HugeiconsIcon icon={Bread01Icon} size={20} color={isDark ? '#FBD38D' : '#DD6B20'} />
           <View style={styles.macroTextContainer}>
-            <Text style={[styles.macroValue, { color: '#DD6B20' }]}>{carbs}g</Text>
-            <Text style={styles.macroLabel}>Carbs</Text>
+            <Text style={[styles.macroValue, { color: isDark ? '#FBD38D' : '#DD6B20' }]}>{carbs}g</Text>
+            <Text style={[styles.macroLabel, { color: colors.textTertiary }]}>Carbs</Text>
           </View>
         </View>
 
-        {/* Fats Block */}
-        <View style={[styles.macroBlock, styles.fatsBlock]}>
-          <HugeiconsIcon icon={AvocadoIcon} size={20} color="#38B2AC" />
+        <View style={[styles.macroBlock, { backgroundColor: isDark ? '#1A3B35' : '#E6FFFA' }]}>
+          <HugeiconsIcon icon={AvocadoIcon} size={20} color={isDark ? '#4FD1C5' : '#38B2AC'} />
           <View style={styles.macroTextContainer}>
-            <Text style={[styles.macroValue, { color: '#38B2AC' }]}>{fats}g</Text>
-            <Text style={styles.macroLabel}>Fats</Text>
+            <Text style={[styles.macroValue, { color: isDark ? '#4FD1C5' : '#38B2AC' }]}>{fats}g</Text>
+            <Text style={[styles.macroLabel, { color: colors.textTertiary }]}>Fats</Text>
           </View>
         </View>
       </View>
 
-      {/* Edit Macros Modal */}
-      <Modal visible={isModalVisible} transparent animationType="slide">
+      <Modal visible={isModalVisible} transparent animationType="fade" onRequestClose={() => setIsModalVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Daily Targets</Text>
+          <View style={[styles.modalDialog, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Daily Targets</Text>
+              <TouchableOpacity onPress={() => setIsModalVisible(false)} style={[styles.closeButton, { backgroundColor: colors.cardAlt }]}>
+                <HugeiconsIcon icon={Cancel01Icon} size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
             
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Daily Calories (kcal)</Text>
+            <View style={[styles.inputCard, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+              <View style={styles.inputHeader}>
+                <View style={[styles.inputIconContainer, { backgroundColor: isDark ? '#3B1A1A' : '#FFF5F5' }]}>
+                  <HugeiconsIcon icon={FireIcon} size={18} color={isDark ? '#FC8181' : '#E53E3E'} />
+                </View>
+                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Daily Calories</Text>
+              </View>
               <TextInput 
-                style={styles.textInput} 
+                style={[styles.textInput, { color: colors.text }]} 
                 keyboardType="number-pad"
                 value={editCalories}
                 onChangeText={setEditCalories}
+                placeholder="2000"
+                placeholderTextColor={colors.textMuted}
               />
+              <Text style={[styles.inputUnit, { color: colors.textMuted }]}>kcal</Text>
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Protein (g)</Text>
+            <View style={styles.macroInputsRow}>
+              <View style={[styles.inputCard, { flex: 1, marginRight: 8, backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                <View style={styles.inputHeader}>
+                  <View style={[styles.inputIconContainer, { backgroundColor: isDark ? '#3B1A1A' : '#FFF5F5' }]}>
+                    <HugeiconsIcon icon={BeefIcon} size={16} color={isDark ? '#FC8181' : '#E53E3E'} />
+                </View>
+                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Protein</Text>
+              </View>
               <TextInput 
-                style={styles.textInput} 
+                style={[styles.textInput, { color: colors.text }]} 
                 keyboardType="number-pad"
                 value={editProtein}
                 onChangeText={setEditProtein}
+                placeholder="150"
+                placeholderTextColor={colors.textMuted}
               />
+              <Text style={[styles.inputUnit, { color: colors.textMuted }]}>g</Text>
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Carbs (g)</Text>
-              <TextInput 
-                style={styles.textInput} 
-                keyboardType="number-pad"
-                value={editCarbs}
-                onChangeText={setEditCarbs}
-              />
+              <View style={[styles.inputCard, { flex: 1, marginLeft: 8, backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                <View style={styles.inputHeader}>
+                  <View style={[styles.inputIconContainer, { backgroundColor: isDark ? '#3B2A1A' : '#FFFBEB' }]}>
+                    <HugeiconsIcon icon={Bread01Icon} size={16} color={isDark ? '#FBD38D' : '#DD6B20'} />
+                  </View>
+                  <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Carbs</Text>
+                </View>
+                <TextInput 
+                  style={[styles.textInput, { color: colors.text }]} 
+                  keyboardType="number-pad"
+                  value={editCarbs}
+                  onChangeText={setEditCarbs}
+                  placeholder="200"
+                  placeholderTextColor={colors.textMuted}
+                />
+                <Text style={[styles.inputUnit, { color: colors.textMuted }]}>g</Text>
+              </View>
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Fats (g)</Text>
-              <TextInput 
-                style={styles.textInput} 
-                keyboardType="number-pad"
-                value={editFats}
-                onChangeText={setEditFats}
-              />
+            <View style={styles.macroInputsRow}>
+              <View style={[styles.inputCard, { flex: 1, marginRight: 8, backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                <View style={styles.inputHeader}>
+                  <View style={[styles.inputIconContainer, { backgroundColor: isDark ? '#1A3B35' : '#E6FFFA' }]}>
+                    <HugeiconsIcon icon={AvocadoIcon} size={16} color={isDark ? '#4FD1C5' : '#38B2AC'} />
+                  </View>
+                  <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Fats</Text>
+                </View>
+                <TextInput 
+                  style={[styles.textInput, { color: colors.text }]} 
+                  keyboardType="number-pad"
+                  value={editFats}
+                  onChangeText={setEditFats}
+                  placeholder="70"
+                  placeholderTextColor={colors.textMuted}
+                />
+                <Text style={[styles.inputUnit, { color: colors.textMuted }]}>g</Text>
+              </View>
+
+              <View style={[styles.inputCard, { flex: 1, marginLeft: 8, backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                <View style={styles.inputHeader}>
+                  <View style={[styles.inputIconContainer, { backgroundColor: isDark ? '#1A2A3B' : '#E0F2FE' }]}>
+                    <HugeiconsIcon icon={DropletIcon} size={16} color={isDark ? '#63B3ED' : '#0EA5E9'} />
+                  </View>
+                  <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Water</Text>
+                </View>
+                <TextInput 
+                  style={[styles.textInput, { color: colors.text }]} 
+                  keyboardType="decimal-pad"
+                  value={editWater}
+                  onChangeText={setEditWater}
+                  placeholder="2.5"
+                  placeholderTextColor={colors.textMuted}
+                />
+                <Text style={[styles.inputUnit, { color: colors.textMuted }]}>L</Text>
+              </View>
             </View>
 
-            <View style={styles.modalButtons}>
+            <View style={styles.modalFooter}>
               <Button 
-                title="Cancel" 
-                variant="outline" 
-                style={{ flex: 1, marginRight: 8 }} 
-                onPress={() => setIsModalVisible(false)} 
-                disabled={isSaving}
-              />
-              <Button 
-                title={isSaving ? "Saving..." : "Save"} 
-                style={{ flex: 1, marginLeft: 8 }} 
+                title={isSaving ? "Saving..." : "Save Targets"} 
                 onPress={handleSave} 
                 disabled={isSaving}
+                style={styles.saveButton}
               />
+              <TouchableOpacity 
+                style={styles.cancelLink} 
+                onPress={() => setIsModalVisible(false)}
+                disabled={isSaving}
+              >
+                <Text style={[styles.cancelLinkText, { color: colors.textMuted }]}>Cancel</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   cardContainer: {
@@ -272,43 +338,106 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
+    backgroundColor: 'rgba(45, 55, 72, 0.5)',
+    justifyContent: 'center', // Center on screen for professional feel
+    alignItems: 'center',
     padding: 24,
-    paddingBottom: 40,
+  },
+  modalDialog: {
+    width: Dimensions.get('window').width - 48,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '800',
     color: '#2D3748',
-    marginBottom: 24,
+    flex: 1,
     textAlign: 'center',
+    marginLeft: 32, 
   },
-  inputGroup: {
-    marginBottom: 16,
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F7FAFC',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inputCard: {
+    backgroundColor: '#F7FAFC',
+    borderRadius: 14,
+    padding: 8,
+    marginBottom: 8,
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: '#EDF2F7',
+  },
+  inputHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  inputIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
   },
   inputLabel: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#4A5568',
-    marginBottom: 8,
+    fontWeight: '700',
+    color: '#718096',
+  },
+  macroInputsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   textInput: {
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
+    fontSize: 18,
+    fontWeight: '800',
     color: '#2D3748',
-    backgroundColor: '#F7FAFC',
+    paddingVertical: 2,
+    paddingRight: 60, 
   },
-  modalButtons: {
-    flexDirection: 'row',
-    marginTop: 24,
+  inputUnit: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#A0AEC0',
+  },
+  modalFooter: {
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  saveButton: {
+    width: '100%',
+    height: 44,
+    borderRadius: 22,
+  },
+  cancelLink: {
+    marginTop: 8,
+    padding: 4,
+  },
+  cancelLinkText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#A0AEC0',
   }
 });
