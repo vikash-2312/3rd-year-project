@@ -7,7 +7,7 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { useUser } from "@clerk/expo";
 import { useRouter } from "expo-router";
-import { collection, onSnapshot, query, orderBy, limit, deleteDoc, doc } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy, limit, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import { 
   ActivityIndicator, 
@@ -44,10 +44,20 @@ export default function NotificationsScreen() {
     const q = query(notificationsRef, orderBy('createdAt', 'desc'), limit(50));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const logs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as AppNotification[];
+      const logs = snapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        
+        // Mark as read if it is currently unread
+        if (data.read === false) {
+          updateDoc(doc(db, 'users', user.id, 'notifications', docSnap.id), { read: true })
+            .catch(err => console.error("Error marking read:", err));
+        }
+
+        return {
+          id: docSnap.id,
+          ...data
+        } as AppNotification;
+      });
       setNotifications(logs);
       setLoading(false);
     });

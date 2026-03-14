@@ -2,20 +2,59 @@ import { useUser } from '@clerk/expo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { doc, setDoc } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 import { db } from '../../lib/firebase';
+import { HugeiconsIcon } from '@hugeicons/react-native';
+import { CheckmarkCircle02Icon, CircleIcon } from '@hugeicons/core-free-icons';
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+
+const LOADING_STEPS = [
+  "Analyzing profile metrics...",
+  "Calculating caloric needs...",
+  "Formulating macro targets...",
+  "Generating custom AI plan..."
+];
 
 export default function GeneratingProfile() {
   const router = useRouter();
   const { user } = useUser();
-  const [loadingText, setLoadingText] = useState('Analyzing your profile...');
+  const [currentStep, setCurrentStep] = useState(0);
+  const [aiCompleted, setAiCompleted] = useState(false);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    let isMounted = true;
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
+  // Timer logic for UI steps
+  useEffect(() => {
+    if (currentStep < LOADING_STEPS.length - 1) {
+      // Dummy timer for early steps
+      const timer = setTimeout(() => {
+        if (isMountedRef.current) setCurrentStep(prev => prev + 1);
+      }, 1500);
+      return () => clearTimeout(timer);
+    } else if (currentStep === LOADING_STEPS.length - 1) {
+      // Last step: wait for AI to formally finish
+      if (aiCompleted) {
+        const timer = setTimeout(() => {
+          if (isMountedRef.current) setCurrentStep(LOADING_STEPS.length); // All complete
+        }, 800);
+        return () => clearTimeout(timer);
+      }
+    } else if (currentStep === LOADING_STEPS.length) {
+      // Everything is done, redirect
+      const timer = setTimeout(() => {
+        if (isMountedRef.current) router.replace('/(tabs)');
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [currentStep, aiCompleted]);
+
+  useEffect(() => {
     const generateProfile = async () => {
       if (!user) return;
 
@@ -47,9 +86,7 @@ export default function GeneratingProfile() {
           Height: ${heightFt} ft ${heightIn} in
         `;
 
-        if (isMounted) setLoadingText('Calculating optimal macros...');
-
-        // 2. Call Gemini via direct REST API (compatible with Expo Go / React Native)
+        // 2. Call Gemini via direct REST API
         const prompt = `You are an expert fitness and nutrition AI assistant. 
 Given the following user profile, calculate their daily nutritional requirements.
 
@@ -93,8 +130,6 @@ Return ONLY a valid JSON object matching this exact structure, with no markdown 
         textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
         const generatedData = JSON.parse(textResponse);
 
-        if (isMounted) setLoadingText('Building your fitness plan...');
-
         // 3. Save everything to Firebase
         const userRef = doc(db, 'users', user.id);
         await setDoc(userRef, {
@@ -117,39 +152,59 @@ Return ONLY a valid JSON object matching this exact structure, with no markdown 
         // 4. Update local storage marker
         await AsyncStorage.setItem('has_onboarded', 'true');
 
-        if (isMounted) setLoadingText('All set! Redirecting...');
-
-        // Small delay to show final message
-        await new Promise(resolve => setTimeout(resolve, 800));
-
-        if (isMounted) {
-          router.replace('/(tabs)');
+        if (isMountedRef.current) {
+          setAiCompleted(true);
         }
 
       } catch (error) {
         console.error('Generation Error:', error);
-        if (isMounted) {
+        if (isMountedRef.current) {
           Alert.alert('Error', 'Failed to generate your profile. Please try again.');
           router.replace('/(tabs)');
         }
       }
     };
 
-    // Minor delay for visual UX
+    // Minor delay before starting API
     setTimeout(() => {
       generateProfile();
     }, 1000);
 
-    return () => {
-      isMounted = false;
-    };
   }, [user]);
 
   return (
     <View style={styles.container}>
-      <ActivityIndicator size="large" color="#009050" style={styles.spinner} />
-      <Text style={styles.loadingText}>{loadingText}</Text>
-      <Text style={styles.subText}>Powered by Gemini AI</Text>
+      <View style={styles.checklistContainer}>
+        {LOADING_STEPS.map((step, index) => {
+          const isCompleted = index < currentStep;
+          const isCurrent = index === currentStep;
+          const isPending = index > currentStep;
+
+          return (
+            <View key={index} style={[styles.stepRow, isCurrent ? styles.stepCurrent : null]}>
+              <View style={styles.iconContainer}>
+                {isCompleted ? (
+                  <HugeiconsIcon icon={CheckmarkCircle02Icon} size={24} color="#009050" />
+                ) : isCurrent ? (
+                  <ActivityIndicator size="small" color="#009050" />
+                ) : (
+                  <View style={styles.pendingCircle} />
+                )}
+              </View>
+              <Text style={[
+                styles.stepText,
+                isCompleted && styles.textCompleted,
+                isCurrent && styles.textCurrent,
+                isPending && styles.textPending
+              ]}>
+                {step}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+      
+      <Text style={styles.subText}>Powered by Gemini AI ✨</Text>
     </View>
   );
 }
@@ -159,23 +214,59 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
-    alignItems: 'center',
     padding: 24,
   },
-  spinner: {
-    transform: [{ scale: 1.5 }],
-    marginBottom: 24,
+  checklistContainer: {
+    padding: 24,
+    backgroundColor: '#F7FAFC',
+    borderRadius: 24,
+    gap: 20,
+    marginBottom: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
   },
-  loadingText: {
-    fontSize: 20,
-    fontWeight: 'bold',
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  stepCurrent: {
+    transform: [{ scale: 1.02 }],
+  },
+  iconContainer: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pendingCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
+  },
+  stepText: {
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+  },
+  textCompleted: {
+    color: '#009050',
+  },
+  textCurrent: {
     color: '#2D3748',
-    marginBottom: 8,
-    textAlign: 'center',
+  },
+  textPending: {
+    color: '#A0AEC0',
   },
   subText: {
     fontSize: 14,
     color: '#A0AEC0',
     textAlign: 'center',
+    fontWeight: '500',
   }
 });

@@ -3,7 +3,7 @@ import { Stack, useSegments, Redirect } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import * as Notifications from 'expo-notifications';
 import { useEffect, useRef } from 'react';
-import { registerForPushNotificationsAsync, scheduleDailyReminders, saveNotificationHistory, seedAdminSettings } from '../lib/notifications';
+import { registerForPushNotificationsAsync, scheduleDailyReminders, saveNotificationHistory, seedAdminSettings, seedWelcomeNotification } from '../lib/notifications';
 
 const tokenCache = {
   async getToken(key: string) {
@@ -53,11 +53,19 @@ const InitialLayout = () => {
         console.error('[Notifications] Registration error:', err);
       });
       
-      // 2. Schedule local reminders
-      scheduleDailyReminders();
+      // 2. Fetch User Preferences, and Schedule local reminders
+      getDoc(doc(db, 'users', user.id, 'settings', 'preferences')).then(prefSnap => {
+        const prefs = prefSnap.data();
+        const enabled = prefs?.notificationsEnabled ?? true;
+        scheduleDailyReminders(enabled);
+      }).catch(err => {
+        console.error('[Notifications] Error fetching preferences:', err);
+        scheduleDailyReminders(true); // default fallback
+      });
 
-      // 3. Seed Admin Settings (Initial Setup)
+      // 3. Seed Admin Settings and Welcome Message (Initial Setup)
       seedAdminSettings();
+      seedWelcomeNotification(user.id);
 
       // 4. Listen for notifications
       const notificationSubscription = Notifications.addNotificationReceivedListener(notification => {

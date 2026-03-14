@@ -1,13 +1,13 @@
-import { AvocadoIcon, BeefIcon, Bread01Icon, PencilEdit02Icon, Cancel01Icon, FireIcon, DropletIcon } from '@hugeicons/core-free-icons';
-import { HugeiconsIcon } from '@hugeicons/react-native';
 import { useUser } from '@clerk/expo';
+import { AvocadoIcon, BeefIcon, Bread01Icon, Cancel01Icon, DropletIcon, FireIcon, PencilEdit02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react-native';
 import { doc, updateDoc } from 'firebase/firestore';
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
-import { Alert, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View, Dimensions } from 'react-native';
+import React, { forwardRef, useImperativeHandle, useState } from 'react';
+import { Alert, Dimensions, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { db } from '../lib/firebase';
+import { useTheme } from '../lib/ThemeContext';
 import { Button } from './Button'; // Assuming you have a Button component
 import { SegmentedHalfCircleProgress30 } from './Halfprogress';
-import { useTheme } from '../lib/ThemeContext';
 
 type CaloriesCardProps = {
   targetCalories: number;
@@ -26,15 +26,15 @@ export interface CaloriesCardRef {
   openEditModal: () => void;
 }
 
-export const CaloriesCard = forwardRef<CaloriesCardRef, CaloriesCardProps>(({ 
+export const CaloriesCard = forwardRef<CaloriesCardRef, CaloriesCardProps>(({
   targetCalories, targetProtein, targetCarbs, targetFats, targetWaterLiters,
-  remaining, progress, protein, carbs, fats 
+  remaining, progress, protein, carbs, fats
 }, ref) => {
   const { user } = useUser();
   const { colors, isDark } = useTheme();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  
+
   // Local state for editing
   const [editCalories, setEditCalories] = useState(targetCalories.toString());
   const [editProtein, setEditProtein] = useState(targetProtein.toString());
@@ -58,10 +58,10 @@ export const CaloriesCard = forwardRef<CaloriesCardRef, CaloriesCardProps>(({
   const handleSave = async () => {
     if (!user) return;
     setIsSaving(true);
-    
+
     try {
       const userRef = doc(db, 'users', user.id);
-      
+
       const newMacros = {
         dailyCalories: parseInt(editCalories) || 0,
         proteinGrams: parseInt(editProtein) || 0,
@@ -101,10 +101,10 @@ export const CaloriesCard = forwardRef<CaloriesCardRef, CaloriesCardProps>(({
       <View style={styles.progressContainer}>
         <SegmentedHalfCircleProgress30
           progress={progress}
-          size={270}
-          strokeWidth={40}
+          size={Math.min(270, Dimensions.get('window').width - 100)} // Responsive size
+          strokeWidth={Math.min(40, (Dimensions.get('window').width - 100) * 0.15)} // Responsive stroke
           segments={15}
-          gapAngle={24}
+          gapAngle={25}
           value={remaining}
           label="Remaining"
         />
@@ -145,7 +145,7 @@ export const CaloriesCard = forwardRef<CaloriesCardRef, CaloriesCardProps>(({
                 <HugeiconsIcon icon={Cancel01Icon} size={20} color={colors.text} />
               </TouchableOpacity>
             </View>
-            
+
             <View style={[styles.inputCard, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
               <View style={styles.inputHeader}>
                 <View style={[styles.inputIconContainer, { backgroundColor: isDark ? '#3B1A1A' : '#FFF5F5' }]}>
@@ -153,8 +153,8 @@ export const CaloriesCard = forwardRef<CaloriesCardRef, CaloriesCardProps>(({
                 </View>
                 <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Daily Calories</Text>
               </View>
-              <TextInput 
-                style={[styles.textInput, { color: colors.text }]} 
+              <TextInput
+                style={[styles.textInput, { color: colors.text }]}
                 keyboardType="number-pad"
                 value={editCalories}
                 onChangeText={setEditCalories}
@@ -169,19 +169,19 @@ export const CaloriesCard = forwardRef<CaloriesCardRef, CaloriesCardProps>(({
                 <View style={styles.inputHeader}>
                   <View style={[styles.inputIconContainer, { backgroundColor: isDark ? '#3B1A1A' : '#FFF5F5' }]}>
                     <HugeiconsIcon icon={BeefIcon} size={16} color={isDark ? '#FC8181' : '#E53E3E'} />
+                  </View>
+                  <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Protein</Text>
                 </View>
-                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Protein</Text>
+                <TextInput
+                  style={[styles.textInput, { color: colors.text }]}
+                  keyboardType="number-pad"
+                  value={editProtein}
+                  onChangeText={setEditProtein}
+                  placeholder="150"
+                  placeholderTextColor={colors.textMuted}
+                />
+                <Text style={[styles.inputUnit, { color: colors.textMuted }]}>g</Text>
               </View>
-              <TextInput 
-                style={[styles.textInput, { color: colors.text }]} 
-                keyboardType="number-pad"
-                value={editProtein}
-                onChangeText={setEditProtein}
-                placeholder="150"
-                placeholderTextColor={colors.textMuted}
-              />
-              <Text style={[styles.inputUnit, { color: colors.textMuted }]}>g</Text>
-            </View>
 
               <View style={[styles.inputCard, { flex: 1, marginLeft: 8, backgroundColor: colors.inputBg, borderColor: colors.border }]}>
                 <View style={styles.inputHeader}>
@@ -190,8 +190,8 @@ export const CaloriesCard = forwardRef<CaloriesCardRef, CaloriesCardProps>(({
                   </View>
                   <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Carbs</Text>
                 </View>
-                <TextInput 
-                  style={[styles.textInput, { color: colors.text }]} 
+                <TextInput
+                  style={[styles.textInput, { color: colors.text }]}
                   keyboardType="number-pad"
                   value={editCarbs}
                   onChangeText={setEditCarbs}
@@ -210,8 +210,8 @@ export const CaloriesCard = forwardRef<CaloriesCardRef, CaloriesCardProps>(({
                   </View>
                   <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Fats</Text>
                 </View>
-                <TextInput 
-                  style={[styles.textInput, { color: colors.text }]} 
+                <TextInput
+                  style={[styles.textInput, { color: colors.text }]}
                   keyboardType="number-pad"
                   value={editFats}
                   onChangeText={setEditFats}
@@ -228,8 +228,8 @@ export const CaloriesCard = forwardRef<CaloriesCardRef, CaloriesCardProps>(({
                   </View>
                   <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Water</Text>
                 </View>
-                <TextInput 
-                  style={[styles.textInput, { color: colors.text }]} 
+                <TextInput
+                  style={[styles.textInput, { color: colors.text }]}
                   keyboardType="decimal-pad"
                   value={editWater}
                   onChangeText={setEditWater}
@@ -241,14 +241,14 @@ export const CaloriesCard = forwardRef<CaloriesCardRef, CaloriesCardProps>(({
             </View>
 
             <View style={styles.modalFooter}>
-              <Button 
-                title={isSaving ? "Saving..." : "Save Targets"} 
-                onPress={handleSave} 
+              <Button
+                title={isSaving ? "Saving..." : "Save Targets"}
+                onPress={handleSave}
                 disabled={isSaving}
                 style={styles.saveButton}
               />
-              <TouchableOpacity 
-                style={styles.cancelLink} 
+              <TouchableOpacity
+                style={styles.cancelLink}
                 onPress={() => setIsModalVisible(false)}
                 disabled={isSaving}
               >
@@ -306,17 +306,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   macroBlock: {
-    flexDirection: 'row',
+    flexDirection: Dimensions.get('window').width < 360 ? 'column' : 'row',
+    justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: Dimensions.get('window').width < 360 ? 4 : 12,
     borderRadius: 16,
-    height: 70,
+    height: Dimensions.get('window').width < 360 ? 80 : 70, // Slightly taller for stacked content
     flex: 1,
-    marginHorizontal: 4, // Spacing between blocks
+    marginHorizontal: Dimensions.get('window').width < 360 ? 2 : 4, // Spacing between blocks
   },
   macroTextContainer: {
-    marginLeft: 8,
+    marginLeft: Dimensions.get('window').width < 360 ? 0 : 8,
+    marginTop: Dimensions.get('window').width < 360 ? 4 : 0,
+    alignItems: Dimensions.get('window').width < 360 ? 'center' : 'flex-start',
   },
   macroValue: {
     fontSize: 14,
@@ -366,7 +369,7 @@ const styles = StyleSheet.create({
     color: '#2D3748',
     flex: 1,
     textAlign: 'center',
-    marginLeft: 32, 
+    marginLeft: 32,
   },
   closeButton: {
     width: 32,
@@ -412,7 +415,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#2D3748',
     paddingVertical: 2,
-    paddingRight: 60, 
+    paddingRight: 60,
   },
   inputUnit: {
     position: 'absolute',

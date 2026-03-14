@@ -4,12 +4,28 @@ import { useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Notification01Icon } from '@hugeicons/core-free-icons';
+import { collection, onSnapshot, query, where, limit } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { useTheme } from '../lib/ThemeContext';
 
 export function HomeHeader() {
   const { user } = useUser();
   const router = useRouter();
   const { colors } = useTheme();
+  const [hasUnread, setHasUnread] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!user) return;
+
+    const notifRef = collection(db, 'users', user.id, 'notifications');
+    const q = query(notifRef, where('read', '==', false), limit(1));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setHasUnread(!snapshot.empty);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   const name = user?.fullName || user?.primaryEmailAddress?.emailAddress?.split('@')[0] || 'User';
   const imageUrl = user?.imageUrl;
@@ -35,7 +51,7 @@ export function HomeHeader() {
         onPress={() => router.push('/notifications' as any)}
       >
         <HugeiconsIcon icon={Notification01Icon} size={24} color={colors.text} />
-        <View style={styles.notificationDot} />
+        {hasUnread && <View style={styles.notificationDot} />}
       </TouchableOpacity>
     </View>
   );
