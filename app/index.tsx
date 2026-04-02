@@ -1,21 +1,29 @@
 import { Text, View, StyleSheet, ActivityIndicator } from "react-native";
 import { useAuth, useUser } from "@clerk/expo";
 import { Button } from "../components/Button";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { saveUserToFirestore, db } from "../lib/firebase";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from "expo-router";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs, setDoc } from "firebase/firestore";
 
 export default function Index() {
   const { user } = useUser();
   const router = useRouter();
+  const hasChecked = useRef(false);
 
   useEffect(() => {
     const checkOnboardingStatus = async () => {
-      if (!user) return;
-
+      if (!user || hasChecked.current) return;
+      
       try {
+        const isSigningIn = await AsyncStorage.getItem('is_signing_in');
+        if (isSigningIn === 'true') {
+          console.log('[Index] User is currently signing in, deferring routing to sign-in.tsx');
+          return;
+        }
+
+        hasChecked.current = true;
         // 1. Check local storage first for speed (scoped to the specific user!)
         const hasOnboardedLocal = await AsyncStorage.getItem(`has_onboarded_${user.id}`);
         console.log('[Index] Local onboarding status:', hasOnboardedLocal);
@@ -32,37 +40,70 @@ export default function Index() {
         const userDoc = await getDoc(userRef);
         console.log('[Index] Firestore doc exists:', userDoc.exists());
 
-        if (userDoc.exists()) {
-          const data = userDoc.data();
-          const p = data?.profile;
-          console.log('[Index] Profile data:', p);
-          
-          // Verify that all required onboarding fields are actually populated in the database
-          const hasCompleteProfile = !!(
-            p?.gender && 
-            p?.activityLevel && 
-            p?.goal && 
-            p?.birthdate && 
-            p?.measurements?.weightKg !== undefined && 
-            p?.measurements?.heightFt !== undefined
-          );
-          console.log('[Index] Has complete profile:', hasCompleteProfile);
+        const checkOnboardingData = (data: any) => {
+          const keys = Object.keys(data || {});
+          return data?.hasOnboarded === true ||
+            data?.onboardingCompleted === true ||
+            keys.some((k: string) =>
+              k.includes('onboarding') ||
+              k === 'profile' ||
+              k === 'gender' ||
+              k === 'weight'
+            );
+        };
 
-          if (hasCompleteProfile) {
-            console.log('[Index] Profile complete, saving local and redirecting to tabs');
-            // User has a complete profile, save to local storage for next time
-            await AsyncStorage.setItem(`has_onboarded_${user.id}`, 'true');
-            // @ts-ignore
-            router.replace('/(tabs)');
-          } else {
-            console.log('[Index] Profile incomplete, redirecting to onboarding');
-            // Missing required data, force onboarding
+        if (userDoc.exists() && checkOnboardingData(userDoc.data())) {
+          console.log('[Index] Profile complete, saving local and redirecting to tabs');
+          
+          await AsyncStorage.setItem(`has_onboarded_${user.id}`, 'true');
+          
+          // Safe background sync for verified native profiles
+          const rawEmail = user.primaryEmailAddress?.emailAddress || user.emailAddresses?.[0]?.emailAddress || '';
+          const emailStr = rawEmail.trim().toLowerCase();
+          const name = user.fullName || emailStr.split('@')[0];
+          saveUserToFirestore(user.id, emailStr, name).catch(err => console.error(err));
+
+          // @ts-ignore
+          router.replace('/(tabs)');
+        } else {
+          // Doc missing or incomplete — try email-based fallback
+          const rawEmail = user.primaryEmailAddress?.emailAddress || user.emailAddresses?.[0]?.emailAddress || '';
+          const userEmail = rawEmail.trim().toLowerCase();
+          console.log('[Index] Trying email-based fallback for:', userEmail);
+          let foundProfile = false;
+
+          if (userEmail) {
+            try {
+              const usersRef = collection(db, 'users');
+              const q = query(usersRef, where('email', '==', userEmail));
+              const snap = await getDocs(q);
+
+              for (const docSnap of snap.docs) {
+                if (docSnap.id !== user.id && checkOnboardingData(docSnap.data())) {
+                  console.log('[Index] Found profile under old ID:', docSnap.id, '→ migrating to', user.id);
+                  const oldData = docSnap.data();
+                  await setDoc(doc(db, 'users', user.id), oldData, { merge: true });
+                  await AsyncStorage.setItem(`has_onboarded_${user.id}`, 'true');
+                  
+                  // Safe background sync for newly migrated profiles
+                  const name = user.fullName || userEmail.split('@')[0];
+                  saveUserToFirestore(user.id, userEmail, name).catch(err => console.error(err));
+
+                  // @ts-ignore
+                  router.replace('/(tabs)');
+                  foundProfile = true;
+                  break;
+                }
+              }
+            } catch (emailErr) {
+              console.error('[Index] Email-based lookup failed:', emailErr);
+            }
+          }
+
+          if (!foundProfile) {
+            console.log('[Index] No onboarding data found, redirecting to onboarding');
             router.replace('/(onboarding)/1');
           }
-        } else {
-          console.log('[Index] No Firestore doc, redirecting to onboarding');
-          // User has no database record, redirect to the flow
-          router.replace('/(onboarding)/1');
         }
       } catch (error) {
         console.error("Error checking onboarding status:", error);
@@ -73,19 +114,6 @@ export default function Index() {
 
     checkOnboardingStatus();
   }, [user]);
-
-  useEffect(() => {
-    // Background sync of basic user info
-    if (user) {
-      const { id, primaryEmailAddress, fullName } = user;
-      const email = primaryEmailAddress?.emailAddress || "";
-      const name = fullName || email.split("@")[0];
-
-      saveUserToFirestore(id, email, name).catch((err) => {
-        console.error("Failed to sync user to Firestore", err);
-      });
-    }
-  }, [user]);      
 
   return (
     <View style={styles.loadingContainer}>

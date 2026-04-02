@@ -40,7 +40,7 @@ export default function FoodSearchScreen() {
       setIsLoading(true);
       setHasSearched(true);
       try {
-        const data = await searchFoods(text, 5);
+        const data = await searchFoods(text, 10);
         setResults(data);
       } catch (error) {
         console.error('Search error:', error);

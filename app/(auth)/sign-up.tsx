@@ -5,10 +5,12 @@ import { Link, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React from 'react';
 import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Button } from '../../components/Button';
 import { InputField } from '../../components/InputField';
 import { useWarmUpBrowser } from '../../hooks/useWarmUpBrowser';
-import { saveUserToFirestore } from '../../lib/firebase';
+import { saveUserToFirestore, db } from '../../lib/firebase';
+import { collection, doc, getDocs, query, setDoc, where } from 'firebase/firestore';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -72,9 +74,7 @@ export default function SignUp() {
     }
   };
 
-  if (isSignedIn) {
-    return null;
-  }
+
 
   const handleSubmit = async () => {
     if (!emailAddress || !password) {
@@ -197,21 +197,62 @@ export default function SignUp() {
 
       if (currentStatus === 'complete') {
         const sessionId = result?.createdSessionId || (signUp as any)?.createdSessionId;
-        try {
-          const userId = result?.createdUserId || (signUp as any)?.createdUserId;
-          if (userId) {
-            await saveUserToFirestore(userId, trimmedEmail, name);
-          }
-        } catch (fbErr) {
-          console.error('[SignUp] Firebase error:', fbErr);
-        }
+        const userId = result?.createdUserId || (signUp as any)?.createdUserId;
+        
+        if (sessionId && userId) {
+          try {
+            // Lock index routing
+            await AsyncStorage.setItem('is_signing_in', 'true');
+            
+            // Check if this newly signed-up email actually belongs to an orphaned/legacy Firebase profile
+            let foundProfile = false;
+            try {
+              const usersRef = collection(db, 'users');
+              const q = query(usersRef, where('email', '==', trimmedEmail));
+              const snap = await getDocs(q);
 
-        if (sessionId) {
-          await setActive({ session: sessionId });
-          Alert.alert('Success', 'Account created successfully!');
-          router.replace('/');
+              const checkOnboardingData = (data: any) => {
+                if (!data) return false;
+                const keys = Object.keys(data);
+                return data.hasOnboarded === true ||
+                  data.onboardingCompleted === true ||
+                  keys.some((k: string) => k.includes('onboarding') || k === 'profile' || k === 'gender' || k === 'weight');
+              };
+
+              for (const docSnap of snap.docs) {
+                if (docSnap.id !== userId && checkOnboardingData(docSnap.data())) {
+                  console.log('[SignUp] Found legacy profile for email, migrating to new ID:', userId);
+                  const oldData = docSnap.data();
+                  await setDoc(doc(db, 'users', userId), oldData, { merge: true });
+                  await AsyncStorage.setItem(`has_onboarded_${userId}`, 'true');
+                  foundProfile = true;
+                  break; 
+                }
+              }
+            } catch (fbQueryErr) {
+              console.error('[SignUp] Failed checking for legacy profile:', fbQueryErr);
+            }
+
+            // If no prior profile existed, create a brand new bare document.
+            if (!foundProfile) {
+              await saveUserToFirestore(userId, trimmedEmail, name).catch(console.error);
+            }
+
+            // Activate session
+            await setActive({ session: sessionId });
+            
+            // Route intelligently
+            await AsyncStorage.removeItem('is_signing_in');
+            Alert.alert('Success', 'Account created successfully!');
+            router.replace(foundProfile ? '/(tabs)' : '/(onboarding)/1');
+
+          } catch (fbErr) {
+            console.error('[SignUp] Critical Firebase/routing error:', fbErr);
+            await AsyncStorage.removeItem('is_signing_in');
+            router.replace('/');
+          }
         } else {
-          Alert.alert('Error', 'Session ID not found after completion.');
+          Alert.alert('Error', 'Session ID or User ID not found after completion.');
           router.replace('/(auth)/sign-in'); // Fallback
         }
       } else {
@@ -243,16 +284,23 @@ export default function SignUp() {
     try {
       const { createdSessionId, setActive: setOAuthActive } = await startOAuthFlow();
       if (createdSessionId && setOAuthActive) {
+        await AsyncStorage.setItem('is_signing_in', 'true');
         await setOAuthActive({ session: createdSessionId });
+        await AsyncStorage.removeItem('is_signing_in');
         router.replace('/');
       }
     } catch (err) {
+      await AsyncStorage.removeItem('is_signing_in');
       console.error('OAuth error:', err);
       Alert.alert('Error', 'Google sign up failed. Please try again.');
     }
   }, [startOAuthFlow, router]);
 
   // ── Verification Screen ────────────────────────────────────────────
+  if (isSignedIn) {
+    return null;
+  }
+
   if (showVerification) {
     return (
       <KeyboardAvoidingView

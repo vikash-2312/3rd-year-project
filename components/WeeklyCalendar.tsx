@@ -160,7 +160,9 @@ export function WeeklyCalendar({ selectedDate: propsSelectedDate, onDateSelect }
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: 16,
+    paddingBottom: 16,
+    paddingTop: 0,
+    marginTop: 20,
     // Add border bottom or shadow if required by design later
   },
   listContent: {

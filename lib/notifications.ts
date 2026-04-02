@@ -110,26 +110,26 @@ export async function scheduleDailyReminders(enabled: boolean = true) {
     },
     trigger: {
       type: 'daily',
-      hour: 20,
-      minute: 0,
+      hour: 19,
+      minute: 35,
     } as any,
   });
 
   // 4. Sleep Reminder (2:30 AM)
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: "Time to Sleep 🌙",
-      body: "Good rest is crucial for your health and recovery. Have a good night!",
-      data: { url: '/(tabs)' }
-    },
-    trigger: {
-      type: 'daily',
-      hour: 2,
-      minute: 43,
-    } as any,
-  });
+  //   await Notifications.scheduleNotificationAsync({
+  //     content: {
+  //       title: "Time to Sleep 🌙",
+  //       body: "Good rest is crucial for your health and recovery. Have a good night!",
+  //       data: { url: '/(tabs)' }
+  //     },
+  //     trigger: {
+  //       type: 'daily',
+  //       hour: 2,
+  //       minute: 43,
+  //     } as any,
+  //   });
 
-  console.log('[Notifications] Daily reminders scheduled.');
+  //   console.log('[Notifications] Daily reminders scheduled.');
 }
 
 /**

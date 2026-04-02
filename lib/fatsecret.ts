@@ -23,7 +23,7 @@ function rfc3986Encode(str: string): string {
 function generateSignature(method: string, url: string, params: Record<string, string>): string {
   // 1. Sort parameters alphabetically
   const sortedKeys = Object.keys(params).sort();
-  
+
   // 2. Construct parameter string
   const paramString = sortedKeys
     .map((key) => `${rfc3986Encode(key)}=${rfc3986Encode(params[key])}`)
@@ -38,7 +38,7 @@ function generateSignature(method: string, url: string, params: Record<string, s
 
   // 4. Construct signing key
   const signingKey = `${rfc3986Encode(CONSUMER_SECRET)}&`;
-  
+
   // DEBUG: Log base string and key for verification
   console.log('[FatSecret] Base String:', signatureBaseString);
   console.log('[FatSecret] Signing Key:', signingKey);
@@ -64,12 +64,12 @@ export type FoodSearchResult = {
  * Parse the food_description string into serving, calories, and macros.
  * Format: "Per 1 serving - Calories: 300kcal | Fat: 13.00g | Carbs: 32.00g | Protein: 15.00g"
  */
-function parseFoodDescription(desc: string): { 
-  serving: string; 
-  calories: string; 
-  protein: string; 
-  carbs: string; 
-  fat: string; 
+function parseFoodDescription(desc: string): {
+  serving: string;
+  calories: string;
+  protein: string;
+  carbs: string;
+  fat: string;
 } {
   const servingMatch = desc.match(/^(Per .+?) -/);
   const serving = servingMatch ? servingMatch[1] : 'Per serving';
@@ -134,7 +134,7 @@ export async function searchFoods(query: string, maxResults: number = 5): Promis
     }
 
     const data = await response.json();
-    
+
     // Check for FatSecret internal errors
     if (data.error) {
       console.error('FatSecret Error Response:', data.error);

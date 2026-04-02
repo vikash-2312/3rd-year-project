@@ -1,7 +1,8 @@
 import { useUser } from '@clerk/expo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { format } from 'date-fns';
 import { useRouter } from 'expo-router';
-import { doc, setDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import React, { useEffect, useState, useRef } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 import { db } from '../../lib/firebase';
@@ -132,6 +133,7 @@ Return ONLY a valid JSON object matching this exact structure, with no markdown 
 
         // 3. Save everything to Firebase
         const userRef = doc(db, 'users', user.id);
+        const parsedWeight = parseFloat(weight || '0');
         await setDoc(userRef, {
           profile: {
             gender,
@@ -139,7 +141,7 @@ Return ONLY a valid JSON object matching this exact structure, with no markdown 
             activityLevel: activity,
             birthdate,
             measurements: {
-              weightKg: parseFloat(weight || '0'),
+              weightKg: parsedWeight,
               heightFt: parseInt(heightFt || '0'),
               heightIn: parseInt(heightIn || '0'),
             },
@@ -149,7 +151,17 @@ Return ONLY a valid JSON object matching this exact structure, with no markdown 
           hasOnboarded: true,
         }, { merge: true });
 
-        // 4. Update local storage marker
+        // 4. Create Initial Weight Log
+        const weightLogsRef = collection(db, 'weight_logs');
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
+        await addDoc(weightLogsRef, {
+          userId: user.id,
+          weightKg: parsedWeight,
+          date: todayStr,
+          timestamp: serverTimestamp()
+        });
+
+        // 5. Update local storage marker
         await AsyncStorage.setItem('has_onboarded', 'true');
 
         if (isMountedRef.current) {

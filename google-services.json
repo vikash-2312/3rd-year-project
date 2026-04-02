@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "295241198805",
+    "project_id": "testing-ef297",
+    "storage_bucket": "testing-ef297.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:295241198805:android:8fd88980c24c12cd18065c",
+        "android_client_info": {
+          "package_name": "com.anonymous.aicaltrack"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAftoLr5MCReveYuRKrGYJM6RXA_2HuKPs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

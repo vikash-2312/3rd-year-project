@@ -53,7 +53,6 @@ export default function UpdateWeight() {
       const userRef = doc(db, 'users', user.id);
       await updateDoc(userRef, {
         'profile.measurements.weightKg': selectedWeight,
-        'onboarding_weight': selectedWeight,
         'updatedAt': serverTimestamp()
       });
 

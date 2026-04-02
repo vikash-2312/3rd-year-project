@@ -1,7 +1,7 @@
-import { Activity01Icon, FireIcon, Timer02Icon, OrganicFoodIcon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, FireIcon, Timer02Icon, OrganicFoodIcon, Delete02Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../lib/ThemeContext';
 
@@ -23,9 +23,11 @@ type ActivityItem = {
 
 type RecentActivityProps = {
   activities?: ActivityItem[];
+  onDelete?: (id: string, name: string) => void;
+  isToday?: boolean;
 };
 
-export function RecentActivity({ activities = [] }: RecentActivityProps) {
+export function RecentActivity({ activities = [], onDelete, isToday = false }: RecentActivityProps) {
   const isEmpty = activities.length === 0;
   const { colors, isDark } = useTheme();
 
@@ -75,7 +77,17 @@ export function RecentActivity({ activities = [] }: RecentActivityProps) {
                       </View>
                     </View>
                   </View>
-                  <Text style={[styles.logTime, { color: colors.textMuted }]}>{activity.time}</Text>
+                  <View style={styles.rightContent}>
+                    <Text style={[styles.logTime, { color: colors.textMuted }]}>{activity.time}</Text>
+                    {isToday && (
+                      <TouchableOpacity 
+                        onPress={() => onDelete?.(activity.id, activity.name)}
+                        style={styles.deleteButton}
+                      >
+                        <HugeiconsIcon icon={Delete02Icon} size={18} color={colors.textMuted} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               </View>
             );
@@ -110,7 +122,17 @@ export function RecentActivity({ activities = [] }: RecentActivityProps) {
                       </View>
                     </View>
                   </View>
-                  <Text style={[styles.logTime, { color: colors.textMuted }]}>{activity.time}</Text>
+                  <View style={styles.rightContent}>
+                    <Text style={[styles.logTime, { color: colors.textMuted }]}>{activity.time}</Text>
+                    {isToday && (
+                      <TouchableOpacity 
+                        onPress={() => onDelete?.(activity.id, activity.name)}
+                        style={styles.deleteButton}
+                      >
+                        <HugeiconsIcon icon={Delete02Icon} size={18} color={colors.textMuted} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               </View>
             );
@@ -125,7 +147,17 @@ export function RecentActivity({ activities = [] }: RecentActivityProps) {
                 <Text style={[styles.activityName, { color: colors.text }]}>{activity.name}</Text>
                 <Text style={[styles.activityTime, { color: colors.textMuted }]}>{activity.time}</Text>
               </View>
-              <Text style={[styles.activityCalories, { color: colors.accent }]}>{activity.calories} cal</Text>
+              <View style={styles.rightContentInline}>
+                <Text style={[styles.activityCalories, { color: colors.accent }]}>{activity.calories} cal</Text>
+                {isToday && (
+                  <TouchableOpacity 
+                    onPress={() => onDelete?.(activity.id, activity.name)}
+                    style={styles.deleteButtonSmall}
+                  >
+                    <HugeiconsIcon icon={Delete02Icon} size={18} color={colors.textMuted} />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           );
         })
@@ -377,5 +409,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#009050',
+  },
+  rightContent: {
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+    minHeight: 56,
+  },
+  rightContentInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  deleteButton: {
+    padding: 4,
+    marginTop: 4,
+  },
+  deleteButtonSmall: {
+    padding: 2,
   },
 });
