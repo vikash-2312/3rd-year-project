@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button } from '../../components/Button';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { AArrowUpIcon, AArrowDownIcon, ApproximatelyEqualIcon } from '@hugeicons/core-free-icons';
+import * as Haptics from 'expo-haptics';
 
 export default function Step2Goal() {
   const router = useRouter();
@@ -25,43 +26,26 @@ export default function Step2Goal() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>What's your goal?</Text>
-      <Text style={styles.subtitle}>This helps us tailor your experience</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>What results are we chasing?</Text>
+        <Text style={styles.subtitle}>Our AI will tailor your path based on this choice</Text>
+      </View>
 
       <View style={styles.optionsContainer}>
         {options.map((option) => {
           const isSelected = selectedGoal === option.id;
           return (
-            <TouchableOpacity
+            <OptionCard
               key={option.id}
-              style={[
-                styles.optionCard,
-                isSelected && styles.optionCardSelected
-              ]}
-              onPress={() => setSelectedGoal(option.id)}
-            >
-              <View style={[
-                styles.iconContainer,
-                isSelected && styles.iconContainerSelected
-              ]}>
-                <HugeiconsIcon 
-                  icon={option.icon} 
-                  color={isSelected ? '#FFFFFF' : '#A0AEC0'} 
-                  size={32} 
-                />
-              </View>
-              <View style={styles.textContainer}>
-                <Text style={[
-                  styles.optionLabel,
-                  isSelected && styles.optionLabelSelected
-                ]}>
-                  {option.label}
-                </Text>
-                <Text style={styles.optionDescription}>
-                  {option.description}
-                </Text>
-              </View>
-            </TouchableOpacity>
+              label={option.label}
+              description={option.description}
+              icon={option.icon}
+              isSelected={isSelected}
+              onPress={() => {
+                setSelectedGoal(option.id);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }}
+            />
           );
         })}
       </View>
@@ -76,6 +60,64 @@ export default function Step2Goal() {
   );
 }
 
+function OptionCard({ label, description, icon, isSelected, onPress }: any) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const onPressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.98,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const onPressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Pressable
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
+      onPress={onPress}
+      style={{ overflow: 'visible' }}
+    >
+      <Animated.View style={[
+        styles.optionCard,
+        isSelected && styles.optionCardSelected,
+        { transform: [{ scale }] }
+      ]}>
+        <View style={[
+          styles.iconContainer,
+          isSelected && styles.iconContainerSelected
+        ]}>
+          <HugeiconsIcon 
+            icon={icon} 
+            color={isSelected ? '#FFFFFF' : '#A0AEC0'} 
+            size={28} 
+          />
+        </View>
+        <View style={styles.textContainer}>
+          <Text style={[
+            styles.optionLabel,
+            isSelected && styles.optionLabelSelected
+          ]}>
+            {label}
+          </Text>
+          <Text style={styles.optionDescription}>
+            {description}
+          </Text>
+        </View>
+        {isSelected && (
+          <View style={styles.checkCircle} />
+        )}
+      </Animated.View>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -84,18 +126,22 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 40,
   },
+  header: {
+    marginBottom: 40,
+  },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2D3748',
-    marginBottom: 8,
+    lineHeight: 34,
+    fontWeight: '800',
+    color: '#1A202C',
+    marginBottom: 12,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
     color: '#718096',
     textAlign: 'center',
-    marginBottom: 40,
+    fontWeight: '500',
   },
   optionsContainer: {
     flex: 1,
@@ -105,20 +151,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 20,
-    borderRadius: 16,
-    backgroundColor: '#F7FAFC',
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
     borderWidth: 2,
-    borderColor: 'transparent',
+    borderColor: '#F7FAFC',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 2,
   },
   optionCardSelected: {
     borderColor: '#FF6B6B',
     backgroundColor: '#FFF5F5',
+    shadowColor: '#FF6B6B',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 6,
   },
   iconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#EDF2F7',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#F7FAFC',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -131,8 +186,8 @@ const styles = StyleSheet.create({
   },
   optionLabel: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#4A5568',
+    fontWeight: '700',
+    color: '#1A202C',
     marginBottom: 4,
   },
   optionLabelSelected: {
@@ -141,6 +196,16 @@ const styles = StyleSheet.create({
   optionDescription: {
     fontSize: 14,
     color: '#718096',
+    fontWeight: '500',
+  },
+  checkCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FF6B6B',
+    borderWidth: 5,
+    borderColor: '#FFE5E5',
+    marginLeft: 12,
   },
   button: {
     marginTop: 'auto',

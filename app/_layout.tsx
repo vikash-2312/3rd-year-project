@@ -150,6 +150,14 @@ const InitialLayout = () => {
           headerShown: false,
         }}
       />
+      <Stack.Screen
+        name="ai-chat"
+        options={{
+          animation: 'slide_from_bottom',
+          presentation: 'modal',
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 };

@@ -1,5 +1,6 @@
 import { ArrowLeft01Icon, CheckmarkCircle01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -25,11 +26,11 @@ export default function AnalyzeFoodScreen() {
     let isMounted = true;
 
     const analyzeImage = async () => {
-      // If we don't have the base64 payload, we can't send it to Gemini.
-      if (!imageBase64 || !GEMINI_API_KEY) {
+      // If we don't have the image Uri, we can't proceed.
+      if (!imageUri || !GEMINI_API_KEY) {
         if (!GEMINI_API_KEY && isMounted) {
           Alert.alert('Configuration Error', 'Missing Gemini API Key in .env');
-        } else if (!imageBase64 && isMounted) {
+        } else if (!imageUri && isMounted) {
           Alert.alert('Error', 'Image data could not be processed. Please try taking the photo again.');
           router.back();
         }
@@ -37,23 +38,50 @@ export default function AnalyzeFoodScreen() {
       }
 
       try {
-        // Step 1: Initialize
+        // Step 1: Initialize & Get Base64
         if (isMounted) setStep(0);
-        const decodedBase64 = decodeURIComponent(imageBase64);
+        const decodedUri = decodeURIComponent(imageUri);
+
+        const base64Data = await FileSystem.readAsStringAsync(decodedUri, {
+          encoding: 'base64',
+        });
+
+        if (!base64Data) {
+          throw new Error('Failed to convert image to base64');
+        }
 
         // Step 2: Send to Gemini
         if (isMounted) setStep(1);
 
-        const prompt = `You are an expert nutritionist. Analyze this image and identify the food.
-Provide the estimated nutritional value for a standard serving of this food.
-Return ONLY a valid JSON object matching this exact structure, with no markdown formatting or extra text:
+        const prompt = `You are a professional nutritionist and food recognition system.
+
+Your goal is to provide CONSISTENT and STABLE nutritional estimates.
+
+Instructions:
+
+1. Identify the food in the image.
+2. Assume a STANDARD serving size (not large, not small).
+3. Use AVERAGE nutritional values from common nutrition databases.
+4. Do NOT guess randomly — keep values consistent across repeated runs.
+5. If uncertain, choose the MOST COMMON version of the food.
+6. Keep values rounded and stable (avoid unnecessary variation).
+
+Constraints:
+
+* Calories must be rounded to nearest 10
+* Protein, carbs, fat must be rounded to nearest whole number
+* Do NOT change values drastically between similar inputs
+
+Return ONLY valid JSON:
+
 {
-  "foodName": "Name of the food",
-  "calories": 250,
-  "protein": 10,
-  "carbs": 30,
-  "fat": 5
+"foodName": "Name of the food",
+"calories": number,
+"protein": number,
+"carbs": number,
+"fat": number
 }`;
+
 
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
@@ -67,11 +95,17 @@ Return ONLY a valid JSON object matching this exact structure, with no markdown 
                   {
                     inlineData: {
                       mimeType: "image/jpeg",
-                      data: decodedBase64
+                      data: base64Data
                     }
                   }
                 ]
               }],
+              safetySettings: [
+                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+              ]
             }),
           }
         );
@@ -107,7 +141,7 @@ Return ONLY a valid JSON object matching this exact structure, with no markdown 
     setTimeout(analyzeImage, 500);
 
     return () => { isMounted = false; };
-  }, [imageBase64]);
+  }, [imageUri]);
 
   return (
     <SafeAreaView style={styles.safeArea}>

@@ -14,6 +14,8 @@ import {
   TouchableOpacity,
   View,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db } from '../lib/firebase';
@@ -115,106 +117,112 @@ export default function LogFoodScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <Text style={styles.foodName}>{foodName}</Text>
-        {brandName ? <Text style={styles.brandName}>{brandName}</Text> : null}
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <Text style={styles.foodName}>{foodName}</Text>
+          {brandName ? <Text style={styles.brandName}>{brandName}</Text> : null}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Serving Size</Text>
-          <View style={styles.servingInputRow}>
-            <TextInput
-              style={[styles.textInput, { flex: 0.3, marginRight: 12 }]}
-              value={quantity}
-              onChangeText={handleQuantityChange}
-              keyboardType="numeric"
-              placeholder="Qty"
-            />
-            <TextInput
-              style={[styles.textInput, { flex: 0.7 }]}
-              value={unit}
-              onChangeText={setUnit}
-              placeholder="Unit (e.g. cup, g)"
-            />
-          </View>
-        </View>
-
-        <View style={styles.caloriesCard}>
-          <View style={styles.cardHeader}>
-            <View style={styles.cardIconCircle}>
-              <View style={styles.fireDot} />
-            </View>
-            <Text style={styles.cardTitle}>Calories</Text>
-          </View>
-          <View style={styles.calorieInputContainer}>
-            <TextInput
-              style={styles.calorieInput}
-              value={calories}
-              onChangeText={setCalories}
-              keyboardType="numeric"
-            />
-            <Text style={styles.kcalLabel}>kcal</Text>
-          </View>
-        </View>
-
-        <View style={styles.macrosGrid}>
-          <View style={[styles.macroItem, styles.proteinBg]}>
-            <View style={styles.macroHeader}>
-              <HugeiconsIcon icon={BeefIcon} size={18} color="#E53E3E" />
-              <Text style={[styles.macroLabel, { color: '#E53E3E' }]}>Protein</Text>
-            </View>
-            <View style={styles.macroInputRow}>
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Serving Size</Text>
+            <View style={styles.servingInputRow}>
               <TextInput
-                style={styles.macroInput}
-                value={protein}
-                onChangeText={setProtein}
+                style={[styles.textInput, { flex: 0.3, marginRight: 12 }]}
+                value={quantity}
+                onChangeText={handleQuantityChange}
+                keyboardType="numeric"
+                placeholder="Qty"
+              />
+              <TextInput
+                style={[styles.textInput, { flex: 0.7 }]}
+                value={unit}
+                onChangeText={setUnit}
+                placeholder="Unit (e.g. cup, g)"
+              />
+            </View>
+          </View>
+
+          <View style={styles.caloriesCard}>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardIconCircle}>
+                <View style={styles.fireDot} />
+              </View>
+              <Text style={styles.cardTitle}>Calories</Text>
+            </View>
+            <View style={styles.calorieInputContainer}>
+              <TextInput
+                style={styles.calorieInput}
+                value={calories}
+                onChangeText={setCalories}
                 keyboardType="numeric"
               />
-              <Text style={styles.unitLabel}>g</Text>
+              <Text style={styles.kcalLabel}>kcal</Text>
             </View>
           </View>
 
-          <View style={[styles.macroItem, styles.carbsBg]}>
-            <View style={styles.macroHeader}>
-              <HugeiconsIcon icon={Bread01Icon} size={18} color="#DD6B20" />
-              <Text style={[styles.macroLabel, { color: '#DD6B20' }]}>Carbs</Text>
+          <View style={styles.macrosGrid}>
+            <View style={[styles.macroItem, styles.proteinBg]}>
+              <View style={styles.macroHeader}>
+                <HugeiconsIcon icon={BeefIcon} size={18} color="#E53E3E" />
+                <Text style={[styles.macroLabel, { color: '#E53E3E' }]}>Protein</Text>
+              </View>
+              <View style={styles.macroInputRow}>
+                <TextInput
+                  style={styles.macroInput}
+                  value={protein}
+                  onChangeText={setProtein}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.unitLabel}>g</Text>
+              </View>
             </View>
-            <View style={styles.macroInputRow}>
-              <TextInput
-                style={styles.macroInput}
-                value={carbs}
-                onChangeText={setCarbs}
-                keyboardType="numeric"
-              />
-              <Text style={styles.unitLabel}>g</Text>
+
+            <View style={[styles.macroItem, styles.carbsBg]}>
+              <View style={styles.macroHeader}>
+                <HugeiconsIcon icon={Bread01Icon} size={18} color="#DD6B20" />
+                <Text style={[styles.macroLabel, { color: '#DD6B20' }]}>Carbs</Text>
+              </View>
+              <View style={styles.macroInputRow}>
+                <TextInput
+                  style={styles.macroInput}
+                  value={carbs}
+                  onChangeText={setCarbs}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.unitLabel}>g</Text>
+              </View>
+            </View>
+
+            <View style={[styles.macroItem, styles.fatsBg]}>
+              <View style={styles.macroHeader}>
+                <HugeiconsIcon icon={AvocadoIcon} size={18} color="#38B2AC" />
+                <Text style={[styles.macroLabel, { color: '#38B2AC' }]}>Fats</Text>
+              </View>
+              <View style={styles.macroInputRow}>
+                <TextInput
+                  style={styles.macroInput}
+                  value={fat}
+                  onChangeText={setFat}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.unitLabel}>g</Text>
+              </View>
             </View>
           </View>
 
-          <View style={[styles.macroItem, styles.fatsBg]}>
-            <View style={styles.macroHeader}>
-              <HugeiconsIcon icon={AvocadoIcon} size={18} color="#38B2AC" />
-              <Text style={[styles.macroLabel, { color: '#38B2AC' }]}>Fats</Text>
-            </View>
-            <View style={styles.macroInputRow}>
-              <TextInput
-                style={styles.macroInput}
-                value={fat}
-                onChangeText={setFat}
-                keyboardType="numeric"
-              />
-              <Text style={styles.unitLabel}>g</Text>
-            </View>
+          {/* Bottom Button */}
+          <View style={styles.footer}>
+            <Button
+              title={isLogging ? "Logging..." : "Log Food"}
+              onPress={handleLogFood}
+              disabled={isLogging}
+            />
           </View>
-        </View>
-
-        {/* Bottom Button */}
-        <View style={styles.footer}>
-          <Button
-            title={isLogging ? "Logging..." : "Log Food"}
-            onPress={handleLogFood}
-            disabled={isLogging}
-          />
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

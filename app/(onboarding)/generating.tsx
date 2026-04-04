@@ -1,13 +1,15 @@
 import { useUser } from '@clerk/expo';
+import { CheckmarkCircle02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format } from 'date-fns';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { collection, doc, setDoc, addDoc, serverTimestamp } from 'firebase/firestore';
-import React, { useEffect, useState, useRef } from 'react';
+import { addDoc, collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 import { db } from '../../lib/firebase';
-import { HugeiconsIcon } from '@hugeicons/react-native';
-import { CheckmarkCircle02Icon, CircleIcon } from '@hugeicons/core-free-icons';
+import { calculateUserPlan } from '../../services/macroEngine';
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 
@@ -33,23 +35,26 @@ export default function GeneratingProfile() {
   // Timer logic for UI steps
   useEffect(() => {
     if (currentStep < LOADING_STEPS.length - 1) {
-      // Dummy timer for early steps
       const timer = setTimeout(() => {
-        if (isMountedRef.current) setCurrentStep(prev => prev + 1);
+        if (isMountedRef.current) {
+          setCurrentStep(prev => prev + 1);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
       }, 1500);
       return () => clearTimeout(timer);
     } else if (currentStep === LOADING_STEPS.length - 1) {
-      // Last step: wait for AI to formally finish
       if (aiCompleted) {
         const timer = setTimeout(() => {
-          if (isMountedRef.current) setCurrentStep(LOADING_STEPS.length); // All complete
+          if (isMountedRef.current) {
+            setCurrentStep(LOADING_STEPS.length);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
         }, 800);
         return () => clearTimeout(timer);
       }
     } else if (currentStep === LOADING_STEPS.length) {
-      // Everything is done, redirect
       const timer = setTimeout(() => {
-        if (isMountedRef.current) router.replace('/(tabs)');
+        if (isMountedRef.current) router.replace('/(onboarding)/plan-preview');
       }, 800);
       return () => clearTimeout(timer);
     }
@@ -59,129 +64,105 @@ export default function GeneratingProfile() {
     const generateProfile = async () => {
       if (!user) return;
 
-      if (!GEMINI_API_KEY) {
-        Alert.alert(
-          'Missing API Key',
-          'Please add EXPO_PUBLIC_GEMINI_API_KEY to your .env file.',
-          [{ text: 'OK', onPress: () => router.replace('/(tabs)') }]
-        );
-        return;
-      }
-
       try {
         // 1. Gather all data from AsyncStorage
-        const gender = await AsyncStorage.getItem('onboarding_gender');
-        const goal = await AsyncStorage.getItem('onboarding_goal');
-        const activity = await AsyncStorage.getItem('onboarding_activity');
-        const birthdate = await AsyncStorage.getItem('onboarding_birthdate');
-        const weight = await AsyncStorage.getItem('onboarding_weight');
-        const heightFt = await AsyncStorage.getItem('onboarding_height_ft');
-        const heightIn = await AsyncStorage.getItem('onboarding_height_in');
+        const gender = await AsyncStorage.getItem('onboarding_gender') || 'male';
+        const goal = await AsyncStorage.getItem('onboarding_goal') || 'maintain';
+        const activity = await AsyncStorage.getItem('onboarding_activity') || 'moderate';
+        const birthdate = await AsyncStorage.getItem('onboarding_birthdate') || '2000-01-01';
+        const weight = await AsyncStorage.getItem('onboarding_weight') || '70';
+        const heightCm = await AsyncStorage.getItem('onboarding_height_cm') || '170';
+        const diet = await AsyncStorage.getItem('onboarding_diet') || 'non-vegetarian';
 
-        const userProfileStr = `
-          Gender: ${gender}
-          Goal: ${goal}
-          Activity Level: ${activity}
-          Birthdate: ${birthdate}
-          Weight: ${weight} kg
-          Height: ${heightFt} ft ${heightIn} in
-        `;
+        // 2. CORE DETERMINISTIC CALCULATION (REPLACES AI MACRO GEN)
+        const macroPlan = calculateUserPlan({
+          gender,
+          birthdate,
+          weight: parseFloat(weight),
+          height: parseInt(heightCm),
+          activityLevel: activity,
+          goal
+        });
 
-        // 2. Call Gemini via direct REST API
-        const prompt = `You are an expert fitness and nutrition AI assistant. 
-Given the following user profile, calculate their daily nutritional requirements.
+        // 3. SECONDARY AI LAYER: INSIGHTS ONLY
+        let fitnessAdvice = "Keep pushing, consistency is key!"; // Fallback
 
-User Profile:
-${userProfileStr}
-
-Provide a highly accurate target for:
-- Daily Calories
-- Protein (grams)
-- Carbs (grams)
-- Fats (grams)
-- Water intake (liters)
-- A short, motivating 1-sentence fitness advice.
-
-Return ONLY a valid JSON object matching this exact structure, with no markdown formatting or extra text:
-{"dailyCalories": 2000, "proteinGrams": 150, "carbsGrams": 200, "fatsGrams": 60, "waterIntakeLiters": 3.5, "fitnessAdvice": "Keep pushing, consistency is key!"}`;
-
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          const errorBody = await response.text();
-          console.error('Gemini API Error:', response.status, errorBody);
-          throw new Error(`Gemini API returned ${response.status}`);
+        if (GEMINI_API_KEY) {
+          try {
+            const prompt = `You are a fitness coach. The user is a ${gender}, weighs ${weight}kg, goal is ${goal}. 
+            Provide a short, motivating 1-sentence fitness advice for them. No markdown. RETURN ONLY JSON: {"advice": "..."}`;
+            
+            const response = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+              }
+            );
+            if (response.ok) {
+              const data = await response.json();
+              const quote = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (quote) {
+                const parsed = JSON.parse(quote.replace(/```json/g, '').replace(/```/g, '').trim());
+                fitnessAdvice = parsed.advice;
+              }
+            }
+          } catch (e) { console.error("Advice fetch failed", e); }
         }
 
-        const data = await response.json();
+        const finalData = {
+          ...macroPlan,
+          fitnessAdvice
+        };
 
-        // Extract the text from Gemini's response
-        let textResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-        // Clean up markdown code blocks if the AI included them accidentally
-        textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
-        const generatedData = JSON.parse(textResponse);
-
-        // 3. Save everything to Firebase
+        // 4. Save to Firebase
         const userRef = doc(db, 'users', user.id);
-        const parsedWeight = parseFloat(weight || '0');
+        const parsedWeight = parseFloat(weight);
         await setDoc(userRef, {
           profile: {
             gender,
             goal,
             activityLevel: activity,
             birthdate,
+            diet,
             measurements: {
               weightKg: parsedWeight,
-              heightFt: parseInt(heightFt || '0'),
-              heightIn: parseInt(heightIn || '0'),
+              heightCm: parseInt(heightCm),
             },
-            macros: generatedData,
+            macros: finalData,
             updatedAt: new Date(),
           },
           hasOnboarded: true,
         }, { merge: true });
 
-        // 4. Create Initial Weight Log
+        // 5. Activity Logs
         const weightLogsRef = collection(db, 'weight_logs');
-        const todayStr = format(new Date(), 'yyyy-MM-dd');
         await addDoc(weightLogsRef, {
           userId: user.id,
           weightKg: parsedWeight,
-          date: todayStr,
+          date: format(new Date(), 'yyyy-MM-dd'),
           timestamp: serverTimestamp()
         });
 
-        // 5. Update local storage marker
+        // 6. Store for Preview Screen
+        await AsyncStorage.setItem('onboarding_result_calories', finalData.dailyCalories.toString());
+        await AsyncStorage.setItem('onboarding_result_protein', finalData.proteinGrams.toString());
         await AsyncStorage.setItem('has_onboarded', 'true');
 
-        if (isMountedRef.current) {
-          setAiCompleted(true);
-        }
+        if (isMountedRef.current) setAiCompleted(true);
 
       } catch (error) {
         console.error('Generation Error:', error);
         if (isMountedRef.current) {
-          Alert.alert('Error', 'Failed to generate your profile. Please try again.');
-          router.replace('/(tabs)');
+          Alert.alert('System Error', 'Failed to calculate your plan. Using default targets.', [
+            { text: 'Continue', onPress: () => router.replace('/(tabs)') }
+          ]);
         }
       }
     };
 
-    // Minor delay before starting API
-    setTimeout(() => {
-      generateProfile();
-    }, 1000);
-
+    setTimeout(() => { generateProfile(); }, 1000);
   }, [user]);
 
   return (
@@ -196,9 +177,9 @@ Return ONLY a valid JSON object matching this exact structure, with no markdown 
             <View key={index} style={[styles.stepRow, isCurrent ? styles.stepCurrent : null]}>
               <View style={styles.iconContainer}>
                 {isCompleted ? (
-                  <HugeiconsIcon icon={CheckmarkCircle02Icon} size={24} color="#009050" />
+                  <HugeiconsIcon icon={CheckmarkCircle02Icon} size={24} color="#00C066" />
                 ) : isCurrent ? (
-                  <ActivityIndicator size="small" color="#009050" />
+                  <ActivityIndicator size="small" color="#FF6B6B" />
                 ) : (
                   <View style={styles.pendingCircle} />
                 )}
@@ -215,8 +196,7 @@ Return ONLY a valid JSON object matching this exact structure, with no markdown 
           );
         })}
       </View>
-      
-      <Text style={styles.subText}>Powered by Gemini AI ✨</Text>
+      <Text style={styles.subText}>ENGINEERING YOUR RESULTS ✨</Text>
     </View>
   );
 }
@@ -229,16 +209,16 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   checklistContainer: {
-    padding: 24,
+    padding: 32,
     backgroundColor: '#F7FAFC',
-    borderRadius: 24,
-    gap: 20,
+    borderRadius: 32,
+    gap: 24,
     marginBottom: 40,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2,
+    shadowRadius: 20,
+    elevation: 5,
   },
   stepRow: {
     flexDirection: 'row',
@@ -246,11 +226,11 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   stepCurrent: {
-    transform: [{ scale: 1.02 }],
+    transform: [{ scale: 1.05 }],
   },
   iconContainer: {
-    width: 24,
-    height: 24,
+    width: 28,
+    height: 28,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -262,12 +242,12 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   stepText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     flex: 1,
   },
   textCompleted: {
-    color: '#009050',
+    color: '#00C066',
   },
   textCurrent: {
     color: '#2D3748',
@@ -279,6 +259,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#A0AEC0',
     textAlign: 'center',
-    fontWeight: '500',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   }
 });

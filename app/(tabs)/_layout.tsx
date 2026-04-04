@@ -8,6 +8,7 @@ import {
   Home01Icon,
   ScanIcon,
   SearchSquareIcon,
+  SparklesIcon,
   UserCircleIcon
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
@@ -53,6 +54,8 @@ function TabsLayout() {
         router.push('/log-water');
       } else if (option === 'Progress Photo') {
         pickProgressPhoto();
+      } else if (option === 'AI Chat') {
+        router.push('/ai-coach' as any);
       } else {
         console.log(`[FAB] Other option: ${option}`);
       }
@@ -84,25 +87,23 @@ function TabsLayout() {
           allowsEditing: true,
           aspect: [4, 3],
           quality: 0.8,
-          base64: true,
+          base64: false,
         })
         : await ImagePicker.launchImageLibraryAsync({
           mediaTypes: 'images',
           allowsEditing: true,
           aspect: [4, 3],
           quality: 0.8,
-          base64: true,
+          base64: false,
         });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const imageUri = result.assets[0].uri;
-        const base64Data = result.assets[0].base64 || '';
 
         router.push({
           pathname: '/analyze-food',
           params: {
             imageUri: encodeURIComponent(imageUri),
-            imageBase64: encodeURIComponent(base64Data)
           }
         });
       }
@@ -285,6 +286,17 @@ function TabsLayout() {
                   <HugeiconsIcon icon={Camera02Icon} size={24} color={isDark ? '#4DD0E1' : '#00897B'} />
                 </View>
                 <Text style={[styles.optionLabel, { color: colors.text }]}>Progress Photo</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.optionCard, { backgroundColor: colors.card }]}
+                activeOpacity={0.7}
+                onPress={() => handleOptionPress('AI Chat')}
+              >
+                <View style={[styles.optionIconCircle, { backgroundColor: colors.purpleLight }]}>
+                  <HugeiconsIcon icon={SparklesIcon} size={24} color={colors.purple} />
+                </View>
+                <Text style={[styles.optionLabel, { color: colors.text }]}>AI Coach</Text>
               </TouchableOpacity>
             </View>
           </Pressable>

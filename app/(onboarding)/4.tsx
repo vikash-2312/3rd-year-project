@@ -27,8 +27,10 @@ export default function Step4Birthdate() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>When were you born?</Text>
-        <Text style={styles.subtitle}>This helps us calculate your daily caloric needs accurately</Text>
+        <View style={styles.header}>
+          <Text style={styles.title}>When’s your birthday?</Text>
+          <Text style={styles.subtitle}>This helps our AI calculate your metabolism accurately</Text>
+        </View>
 
         <View style={styles.inputRow}>
           <View style={styles.inputWrapper}>
@@ -95,18 +97,22 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 40,
   },
+  header: {
+    marginBottom: 40,
+  },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2D3748',
-    marginBottom: 8,
+    lineHeight: 34,
+    fontWeight: '800',
+    color: '#1A202C',
+    marginBottom: 12,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
     color: '#718096',
     textAlign: 'center',
-    marginBottom: 40,
+    fontWeight: '500',
   },
   inputRow: {
     flexDirection: 'row',
@@ -117,16 +123,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4A5568',
-    marginBottom: 8,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#A0AEC0',
+    marginBottom: 10,
     textAlign: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   inputBox: {
-    fontSize: 20,
-    fontWeight: '600',
-    letterSpacing: 2,
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
   footer: {
     marginTop: 'auto',

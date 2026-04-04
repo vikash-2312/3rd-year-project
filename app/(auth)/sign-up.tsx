@@ -213,10 +213,21 @@ export default function SignUp() {
 
               const checkOnboardingData = (data: any) => {
                 if (!data) return false;
-                const keys = Object.keys(data);
-                return data.hasOnboarded === true ||
-                  data.onboardingCompleted === true ||
-                  keys.some((k: string) => k.includes('onboarding') || k === 'profile' || k === 'gender' || k === 'weight');
+                
+                // 1. Explicit flags
+                if (data.hasOnboarded === true || data.onboardingCompleted === true) return true;
+
+                // 2. Strict field verification (nested in 'profile' OR legacy flat)
+                const profile = data.profile || {};
+                const measurements = profile.measurements || data.measurements || {};
+                
+                const hasGender = profile.gender || data.gender;
+                const hasGoal = profile.goal || data.goal;
+                const hasActivity = profile.activityLevel || data.activityLevel;
+                const hasWeight = measurements.weightKg || data.weight || data.weightKg;
+                const hasHeight = measurements.heightFt || data.heightFt || data.height;
+
+                return !!(hasGender && hasGoal && hasActivity && hasWeight && hasHeight);
               };
 
               for (const docSnap of snap.docs) {

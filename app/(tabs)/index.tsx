@@ -3,7 +3,7 @@ import { collection, doc, getDoc, limit, onSnapshot, query, where, deleteDoc } f
 import { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, View, Text, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { format, isToday as isDateToday } from "date-fns";
+import { format, isToday as isDateToday, startOfDay } from "date-fns";
 import * as Haptics from 'expo-haptics';
 import { CaloriesCard } from "../../components/CaloriesCard";
 import { HomeHeader } from "../../components/HomeHeader";
@@ -11,6 +11,7 @@ import { RecentActivity } from "../../components/RecentActivity";
 import { WaterCard } from "../../components/WaterCard";
 import { WeeklyCalendar } from "../../components/WeeklyCalendar";
 import { HealthScoreCard } from "../../components/HealthScoreCard";
+import { DailyInsightCard } from "../../components/DailyInsightCard";
 import { useRouter } from "expo-router";
 
 import { db } from "../../lib/firebase";
@@ -23,33 +24,32 @@ export default function Home() {
 
   const [userData, setUserData] = useState<any>(null);
   const [logs, setLogs] = useState<any[]>([]);
-  const [isLoadingProps, setIsLoadingProps] = useState(true);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [isProfileLoading, setIsProfileLoading] = useState(true);
+  const [isLogsLoading, setIsLogsLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
   const [latestWeight, setLatestWeight] = useState<number | null>(null);
 
   useEffect(() => {
     if (!user) return;
 
-    // Fetch user profile data
-    const fetchUserData = async () => {
-      try {
-        const userRef = doc(db, 'users', user.id);
-        const userSnap = await getDoc(userRef);
-        if (userSnap.exists()) {
-          setUserData(userSnap.data());
-        }
-      } catch (error) {
-        console.error("Error fetching user data:", error);
-      } finally {
-        setIsLoadingProps(false);
+    // 1. Listen for user profile data (Real-time)
+    const userRef = doc(db, 'users', user.id);
+    const unsubscribeUser = onSnapshot(userRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setUserData(docSnap.data());
       }
-    };
+      setIsProfileLoading(false);
+    }, (error) => {
+      console.error("Error listening to user data:", error);
+      setIsProfileLoading(false);
+    });
 
-    fetchUserData();
-
-    // Listen for logs for the user (completely simple query to avoid index requirement)
+    // 2. Listen for logs for the user
     const dateStr = format(selectedDate, 'yyyy-MM-dd');
     console.log(`[Home] Fetching logs for ${user.id} on date: ${dateStr}`);
+    
+    setIsLogsLoading(true);
+
     const logsQuery = query(
       collection(db, 'logs'),
       where('userId', '==', user.id),
@@ -57,7 +57,7 @@ export default function Home() {
       limit(50)
     );
 
-    const unsubscribe = onSnapshot(logsQuery, (snapshot) => {
+    const unsubscribeLogs = onSnapshot(logsQuery, (snapshot) => {
       console.log(`[Home] Received ${snapshot.docs.length} logs from Firestore`);
       const dailyLogs = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -88,8 +88,10 @@ export default function Home() {
       });
 
       setLogs(dailyLogs);
+      setIsLogsLoading(false);
     }, (error) => {
-      console.error("Firestore Snapshot Error:", error);
+      console.error("Firestore Logs Snapshot Error:", error);
+      setIsLogsLoading(false);
     });
 
     // 3. Fetch Latest Weight Log
@@ -101,15 +103,16 @@ export default function Home() {
     const unsubscribeWeight = onSnapshot(weightQuery, (snapshot) => {
       if (!snapshot.empty) {
         // Sort in JS to avoid index requirement
-        const logs = snapshot.docs.map(doc => doc.data());
-        logs.sort((a, b) => b.date.localeCompare(a.date));
-        setLatestWeight(logs[0].weightKg);
+        const weightLogs = snapshot.docs.map(doc => doc.data());
+        weightLogs.sort((a, b) => b.date.localeCompare(a.date));
+        setLatestWeight(weightLogs[0].weightKg);
       }
     });
 
     return () => {
-      unsubscribe();
-      unsubscribeWeight();
+      if (unsubscribeUser) unsubscribeUser();
+      if (unsubscribeLogs) unsubscribeLogs();
+      if (unsubscribeWeight) unsubscribeWeight();
     };
   }, [user, selectedDate]);
 
@@ -164,7 +167,15 @@ export default function Home() {
         <HomeHeader />
         <WeeklyCalendar selectedDate={selectedDate} onDateSelect={setSelectedDate} />
 
-        {isLoadingProps ? (
+        {isToday && targets.dailyCalories > 0 && (
+          <DailyInsightCard 
+            consumedCalories={consumedMacros.calories} 
+            targetCalories={dailyCalories} 
+            protein={consumedMacros.protein} 
+          />
+        )}
+
+        {(isProfileLoading || isLogsLoading) ? (
           <ActivityIndicator size="large" color={colors.accent} style={{ marginVertical: 40 }} />
         ) : (
           <>

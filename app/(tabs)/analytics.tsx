@@ -21,8 +21,12 @@ import {
   ProgressPhoto,
   subscribeToUserPhotos,
   deleteProgressPhoto,
+  getDayNumber,
+  getTimeLabel,
   getBeforeAfterPhotos,
 } from "../../services/progressPhotoService";
+import { StreakModal } from "../../components/StreakModal";
+import { subscribeToActiveDays, getWeekDays, calculateStreak } from "../../services/streakService";
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -128,44 +132,23 @@ export default function Analytics() {
       setProgressPhotos(photos);
     });
 
+    // 5. Subscribe to Streak
+    const unsubscribeStreak = subscribeToActiveDays(user.id, (data) => {
+      setWeekActivity(data.activeDays);
+    });
+
     return () => {
       unsubscribeUser();
       unsubscribeLogs();
       unsubscribeWeight();
       unsubscribePhotos();
+      unsubscribeStreak();
     };
   }, [user]);
 
   // Calculate Streak Count (Consecutive days ending today or yesterday)
-  const calculateStreak = () => {
-    let count = 0;
-    let checkDate = today;
-    
-    // Check today first
-    if (weekActivity.has(format(today, 'yyyy-MM-dd'))) {
-      count++;
-      checkDate = subDays(today, 1);
-    } else {
-      // If no activity today, check yesterday to see if streak is still alive
-      checkDate = subDays(today, 1);
-      if (!weekActivity.has(format(checkDate, 'yyyy-MM-dd'))) {
-        return 0; // Streak broken
-      }
-    }
-
-    // Iterate backward through all active days
-    while (true) {
-      if (weekActivity.has(format(checkDate, 'yyyy-MM-dd'))) {
-        count++;
-        checkDate = subDays(checkDate, 1);
-      } else {
-        break;
-      }
-    }
-    return count;
-  };
-
-  const streakCount = calculateStreak();
+  // Streak Logic
+  const streakCount = calculateStreak(weekActivity);
 
   // Progress Photo handlers
   const { before: beforePhoto, after: afterPhoto } = getBeforeAfterPhotos(progressPhotos);
@@ -388,86 +371,6 @@ export default function Analytics() {
           onPhotoLongPress={handlePhotoLongPress}
           onAddPress={handleAddProgressPhoto}
         />
-
-          <View style={styles.row}>
-          {/* Daily Streak Card */}
-          <TouchableOpacity 
-            style={[styles.card, styles.halfCard, { backgroundColor: colors.card }]} 
-            onPress={() => setIsStreakModalVisible(true)}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.cardHeaderRow, SCREEN_WIDTH < 400 && { gap: 4 }]}>
-              <View style={[
-                styles.iconContainer, 
-                { width: SCREEN_WIDTH < 400 ? 36 : 44, height: SCREEN_WIDTH < 400 ? 36 : 44, borderRadius: 12, marginBottom: 0 }
-              ]}>
-                <Image 
-                  source={require('../../assets/images/fire.png')} 
-                  style={{ width: SCREEN_WIDTH < 400 ? 18 : 24, height: SCREEN_WIDTH < 400 ? 18 : 24 }} 
-                  resizeMode="contain"
-                />
-              </View>
-              <View style={{ flex: 1, flexShrink: 1 }}>
-                <Text style={[styles.cardTitle, SCREEN_WIDTH < 400 && { fontSize: 13 }, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>Day Streak</Text>
-                <View style={[styles.streakValueContainer, SCREEN_WIDTH < 400 && { marginTop: 0 }]}>
-                  <Text style={[styles.streakValue, SCREEN_WIDTH < 400 && { fontSize: 20 }, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{streakCount}</Text>
-                  <Text style={[styles.streakUnit, SCREEN_WIDTH < 400 && { fontSize: 11 }, { color: colors.textTertiary }]} numberOfLines={1}>days</Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={[styles.streakGrid, SCREEN_WIDTH < 400 && { paddingHorizontal: 0 }]}>
-              {weekDays.map((date, index) => {
-                const dateStr = format(date, 'yyyy-MM-dd');
-                const isActive = weekActivity.has(dateStr);
-                const isToday = isSameDay(date, today);
-
-                return (
-                  <View key={index} style={[styles.dayColumn, SCREEN_WIDTH < 400 && { gap: 2 }]}>
-                    <View style={[
-                      styles.circleIndicator,
-                      SCREEN_WIDTH < 400 && { width: 12, height: 12, borderRadius: 6 }, 
-                      { borderColor: colors.border },
-                      isActive && styles.circleIndicatorActive,
-                      isToday && !isActive && styles.circleIndicatorToday
-                    ]}>
-                      {isActive && (
-                        <HugeiconsIcon icon={CheckmarkCircle02Icon} size={SCREEN_WIDTH < 400 ? 10 : 14} color="#FFFFFF" />
-                      )}
-                    </View>
-                    <Text style={[styles.dayLabel, SCREEN_WIDTH < 400 && { fontSize: 8 }, { color: colors.textMuted }, isToday && styles.dayLabelToday]}>
-                      {weekDayLabels[index]}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.card, styles.halfCard, { justifyContent: 'space-between', backgroundColor: colors.card }]}
-            onPress={() => router.push('/update-weight' as any)}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.cardHeaderRow, SCREEN_WIDTH < 400 && { gap: 4 }]}>
-              <View style={[
-                styles.iconContainer, 
-                { backgroundColor: colors.accentLight, width: SCREEN_WIDTH < 400 ? 36 : 44, height: SCREEN_WIDTH < 400 ? 36 : 44, borderRadius: 12, marginBottom: 0 }
-              ]}>
-                <HugeiconsIcon icon={ChampionIcon} size={SCREEN_WIDTH < 400 ? 18 : 24} color={colors.accent} />
-              </View>
-              <View style={{ flex: 1, flexShrink: 1 }}>
-                <Text style={[styles.cardTitle, SCREEN_WIDTH < 400 && { fontSize: 13 }, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>My Weight</Text>
-                <View style={[styles.weightValueContainer, SCREEN_WIDTH < 400 && { marginTop: 0 }]}>
-                  <Text style={[styles.weightValue, SCREEN_WIDTH < 400 && { fontSize: 20 }, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{weight}</Text>
-                  <Text style={[styles.weightUnit, SCREEN_WIDTH < 400 && { fontSize: 11 }, { color: colors.textTertiary }]} numberOfLines={1}>kg</Text>
-                </View>
-              </View>
-            </View>
-            
-            <Text style={[styles.weightSubtitle, { marginBottom: 8, color: colors.textMuted }]}>Current Status</Text>
-          </TouchableOpacity>
-        </View>
 
         {/* Weight Trend Card */}
         {weightHistory.length > 0 && (() => {
@@ -712,6 +615,32 @@ export default function Analytics() {
           </View>
         </View>
 
+        <View style={[styles.row, { marginTop: 16 }]}>
+          <TouchableOpacity
+            style={[styles.card, styles.halfCard, { justifyContent: 'space-between', backgroundColor: colors.card }]}
+            onPress={() => router.push('/update-weight' as any)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.cardHeaderRow, SCREEN_WIDTH < 400 && { gap: 4 }]}>
+              <View style={[
+                styles.iconContainer,
+                { backgroundColor: colors.accentLight, width: SCREEN_WIDTH < 400 ? 36 : 44, height: SCREEN_WIDTH < 400 ? 36 : 44, borderRadius: 12, marginBottom: 0 }
+              ]}>
+                <HugeiconsIcon icon={ChampionIcon} size={SCREEN_WIDTH < 400 ? 18 : 24} color={colors.accent} />
+              </View>
+              <View style={{ flex: 1, flexShrink: 1 }}>
+                <Text style={[styles.cardTitle, SCREEN_WIDTH < 400 && { fontSize: 13 }, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>My Weight</Text>
+                <View style={[styles.weightValueContainer, SCREEN_WIDTH < 400 && { marginTop: 0 }]}>
+                  <Text style={[styles.weightValue, SCREEN_WIDTH < 400 && { fontSize: 20 }, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{weight}</Text>
+                  <Text style={[styles.weightUnit, SCREEN_WIDTH < 400 && { fontSize: 11 }, { color: colors.textTertiary }]} numberOfLines={1}>kg</Text>
+                </View>
+              </View>
+            </View>
+
+            <Text style={[styles.weightSubtitle, { marginBottom: 8, color: colors.textMuted }]}>Current Status</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* AI Health Insights Card */}
         <TouchableOpacity 
           style={[styles.card, styles.aiCard, { backgroundColor: colors.purpleLight, borderColor: colors.purpleBorder }]}
@@ -731,73 +660,14 @@ export default function Analytics() {
 
 
         {/* Streak Detail Modal */}
-        <Modal
-          visible={isStreakModalVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setIsStreakModalVisible(false)}
-        >
-          <Pressable 
-            style={styles.modalOverlay} 
-            onPress={() => setIsStreakModalVisible(false)}
-          >
-            <Pressable style={[styles.modalDialog, { backgroundColor: colors.card }]} onPress={(e) => e.stopPropagation()}>
-              <View style={styles.modalHeader}>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>Daily Streak Details</Text>
-                <TouchableOpacity onPress={() => setIsStreakModalVisible(false)}>
-                  <HugeiconsIcon icon={Cancel01Icon} size={24} color={colors.text} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.bigCard}>
-                <View style={[styles.iconContainer, { width: 60, height: 60, borderRadius: 20 }]}>
-                  <Image 
-                    source={require('../../assets/images/fire.png')} 
-                    style={{ width: 32, height: 32 }} 
-                    resizeMode="contain"
-                  />
-                </View>
-                
-                <View style={styles.streakMainRow}>
-                  <View>
-                    <Text style={[styles.bigStreakCount, { color: colors.text }]}>{streakCount}</Text>
-                    <Text style={[styles.bigStreakLabel, { color: colors.textTertiary }]}>Day Streak</Text>
-                  </View>
-                  
-                  <View style={[styles.streakChip, { backgroundColor: isDark ? '#3B1A1A' : '#FFF5F5', borderColor: isDark ? '#FC8181' : '#FED7D7' }]}>
-                    <Text style={[styles.streakChipText, { color: colors.danger }]}>Keep it Going 🔥</Text>
-                  </View>
-                </View>
-
-                <View style={[styles.streakGrid, { marginTop: 24 }]}>
-                  {weekDays.map((date, index) => {
-                    const dateStr = format(date, 'yyyy-MM-dd');
-                    const isActive = weekActivity.has(dateStr);
-                    const isToday = isSameDay(date, today);
-
-                    return (
-                      <View key={index} style={[styles.dayColumn, { gap: 8 }]}>
-                        <View style={[
-                          styles.circleIndicator, 
-                          { width: 28, height: 28, borderRadius: 14, borderColor: colors.border },
-                          isActive && styles.circleIndicatorActive,
-                          isToday && !isActive && styles.circleIndicatorToday
-                        ]}>
-                          {isActive && (
-                            <HugeiconsIcon icon={CheckmarkCircle02Icon} size={20} color="#FFFFFF" />
-                          )}
-                        </View>
-                        <Text style={[styles.dayLabel, { fontSize: 12, color: colors.textMuted }, isToday && styles.dayLabelToday]}>
-                          {weekDayLabels[index]}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-            </Pressable>
-          </Pressable>
-        </Modal>
+        <StreakModal
+          isVisible={isStreakModalVisible}
+          onClose={() => setIsStreakModalVisible(false)}
+          streakCount={streakCount}
+          activeDays={weekActivity}
+          weekDays={weekDays}
+          weekDayLabels={weekDayLabels}
+        />
 
         {/* Full Screen Photo Viewer */}
         <FullScreenPhoto
@@ -1256,86 +1126,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#4A5568',
     fontWeight: '600',
-  },
-
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(45, 55, 72, 0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  modalDialog: {
-    width: '90%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 32,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#2D3748',
-  },
-  bigCard: {
-    width: '100%',
-  },
-  streakMainRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 16,
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  bigStreakCount: {
-    fontSize: 48,
-    fontWeight: '900',
-    color: '#2D3748',
-  },
-  bigStreakLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#718096',
-    marginTop: -4,
-  },
-  streakChip: {
-    backgroundColor: '#FFF5F5',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#FED7D7',
-  },
-  streakChipText: {
-    color: '#E53E3E',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  modalFooter: {
-    marginTop: 32,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#EDF2F7',
-    alignItems: 'center',
-  },
-  footerInfo: {
-    fontSize: 14,
-    color: '#718096',
-    textAlign: 'center',
-    lineHeight: 20,
-    fontWeight: '500',
   },
 
   // Progress Photo styles

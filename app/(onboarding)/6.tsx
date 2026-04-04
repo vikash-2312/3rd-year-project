@@ -4,36 +4,37 @@ import { useRouter } from 'expo-router';
 import { Button } from '../../components/Button';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { HugeiconsIcon } from '@hugeicons/react-native';
-import { Activity01Icon, Dumbbell01Icon, ChampionIcon } from '@hugeicons/core-free-icons';
+import { Leaf01Icon, NaturalFoodIcon, Dish01Icon, Restaurant01Icon } from '@hugeicons/core-free-icons';
 import * as Haptics from 'expo-haptics';
 
-export default function Step3Activity() {
+export default function Step6Diet() {
   const router = useRouter();
-  const [selectedActivity, setSelectedActivity] = useState<string | null>(null);
+  const [selectedDiet, setSelectedDiet] = useState<string | null>(null);
 
   const handleNext = async () => {
-    if (selectedActivity) {
-      await AsyncStorage.setItem('onboarding_activity', selectedActivity);
-      router.push('/(onboarding)/4');
+    if (selectedDiet) {
+      await AsyncStorage.setItem('onboarding_diet', selectedDiet);
+      router.push('/(onboarding)/generating');
     }
   };
 
   const options = [
-    { id: 'light', label: 'Lightly Active', description: 'Office job, 1-2 workouts/week', icon: Activity01Icon },
-    { id: 'moderate', label: 'Moderately Active', description: 'Active lifestyle, 3-4 workouts/week', icon: Dumbbell01Icon },
-    { id: 'active', label: 'Very Active', description: 'Physical job, 5+ workouts/week', icon: ChampionIcon },
+    { id: 'vegetarian', label: 'Vegetarian', description: 'Plant-based with dairy', icon: Leaf01Icon },
+    { id: 'non-vegetarian', label: 'Non-Vegetarian', description: 'Includes meat and poultry', icon: Restaurant01Icon },
+    { id: 'eggetarian', label: 'Eggetarian', description: 'Vegetarian plus eggs', icon: Dish01Icon },
+    { id: 'vegan', label: 'Vegan', description: 'Strictly plant-based', icon: NaturalFoodIcon },
   ];
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>How active is your lifestyle?</Text>
-        <Text style={styles.subtitle}>This helps us calculate your maintenance calories perfectly</Text>
+        <Text style={styles.title}>Your diet preference?</Text>
+        <Text style={styles.subtitle}>We’ll customize your meal suggestions based on this</Text>
       </View>
 
       <View style={styles.optionsContainer}>
         {options.map((option) => {
-          const isSelected = selectedActivity === option.id;
+          const isSelected = selectedDiet === option.id;
           return (
             <OptionCard
               key={option.id}
@@ -42,7 +43,7 @@ export default function Step3Activity() {
               icon={option.icon}
               isSelected={isSelected}
               onPress={() => {
-                setSelectedActivity(option.id);
+                setSelectedDiet(option.id);
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               }}
             />
@@ -53,7 +54,7 @@ export default function Step3Activity() {
       <Button 
         title="Continue" 
         onPress={handleNext} 
-        disabled={!selectedActivity}
+        disabled={!selectedDiet}
         style={styles.button}
       />
     </View>
@@ -145,12 +146,12 @@ const styles = StyleSheet.create({
   },
   optionsContainer: {
     flex: 1,
-    gap: 16,
+    gap: 12,
   },
   optionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
+    padding: 16,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
     borderWidth: 2,
@@ -170,9 +171,9 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   iconContainer: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#F7FAFC',
     justifyContent: 'center',
     alignItems: 'center',
@@ -188,7 +189,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#1A202C',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   optionLabelSelected: {
     color: '#FF6B6B',

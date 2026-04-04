@@ -18,31 +18,6 @@ export function TransformationInsight({ photos, streakCount }: TransformationIns
   const lastPhoto = photos[photos.length - 1];
   const dayDiff = getDayNumber(lastPhoto, firstPhoto);
 
-  // Weight insight
-  const getWeightInsight = (): { text: string; emoji: string } | null => {
-    const photosWithWeight = photos.filter(p => p.weight !== undefined && p.weight !== null);
-    if (photosWithWeight.length < 2) return null;
-
-    const firstW = photosWithWeight[0].weight!;
-    const lastW = photosWithWeight[photosWithWeight.length - 1].weight!;
-    const diff = lastW - firstW;
-    const absStr = Math.abs(diff).toFixed(1);
-
-    const timeDiff = getDayNumber(photosWithWeight[photosWithWeight.length - 1], photosWithWeight[0]);
-    let timeLabel = '';
-    if (timeDiff <= 7) timeLabel = 'this week';
-    else if (timeDiff <= 14) timeLabel = 'in 2 weeks';
-    else if (timeDiff <= 30) timeLabel = 'this month';
-    else timeLabel = `in ${Math.ceil(timeDiff / 30)} months`;
-
-    if (diff < 0) {
-      return { text: `−${absStr} kg ${timeLabel}`, emoji: '💪' };
-    } else if (diff > 0) {
-      return { text: `+${absStr} kg ${timeLabel}`, emoji: '🔥' };
-    }
-    return { text: `Maintaining weight`, emoji: '⚖️' };
-  };
-
   // Streak insight
   const getStreakInsight = (): { text: string; emoji: string } => {
     if (streakCount >= 7) return { text: `${streakCount} day streak`, emoji: '🏆' };
@@ -59,12 +34,10 @@ export function TransformationInsight({ photos, streakCount }: TransformationIns
     return { text: `${Math.ceil(dayDiff / 30)} months strong`, emoji: '💎' };
   };
 
-  const weightInsight = getWeightInsight();
   const streakInsight = getStreakInsight();
   const journeyInsight = getJourneyInsight();
 
   const insights = [
-    ...(weightInsight ? [{ ...weightInsight, color: isDark ? '#68D391' : '#009050', bg: isDark ? '#1C3829' : '#F0FFF4' }] : []),
     { ...streakInsight, color: isDark ? '#FC8181' : '#E53E3E', bg: isDark ? '#3B1A1A' : '#FFF5F5' },
     { ...journeyInsight, color: isDark ? '#63B3ED' : '#3182CE', bg: isDark ? '#1A2A3B' : '#EBF8FF' },
   ];
