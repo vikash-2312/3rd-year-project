@@ -2,13 +2,16 @@ import { useAuth, useOAuth, useSignUp, useClerk } from '@clerk/expo';
 import { ArrowLeft01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Link, useRouter } from 'expo-router';
+import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import { authBridge } from '../../lib/auth-bridge';
 import React from 'react';
 import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Button } from '../../components/Button';
 import { InputField } from '../../components/InputField';
 import { useWarmUpBrowser } from '../../hooks/useWarmUpBrowser';
+import { checkAndMigrateProfile } from '../../hooks/useAuthCheck';
 import { saveUserToFirestore, db } from '../../lib/firebase';
 import { collection, doc, getDocs, query, setDoc, where } from 'firebase/firestore';
 
@@ -41,7 +44,10 @@ export default function SignUp() {
   const signUpResult = useSignUp() as any;
   const { isLoaded: isLoadedAuth, isSignedIn } = useAuth();
   const { setActive } = useClerk();
-  const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
+  const { startOAuthFlow } = useOAuth({ 
+    strategy: 'oauth_google',
+    redirectUrl: AuthSession.makeRedirectUri()
+  });
   const router = useRouter();
 
   // Handle Signal API: favor the object that has the methods (create, etc.)
@@ -204,62 +210,17 @@ export default function SignUp() {
             // Lock index routing
             await AsyncStorage.setItem('is_signing_in', 'true');
             
-            // Check if this newly signed-up email actually belongs to an orphaned/legacy Firebase profile
-            let foundProfile = false;
-            try {
-              const usersRef = collection(db, 'users');
-              const q = query(usersRef, where('email', '==', trimmedEmail));
-              const snap = await getDocs(q);
-
-              const checkOnboardingData = (data: any) => {
-                if (!data) return false;
-                
-                // 1. Explicit flags
-                if (data.hasOnboarded === true || data.onboardingCompleted === true) return true;
-
-                // 2. Strict field verification (nested in 'profile' OR legacy flat)
-                const profile = data.profile || {};
-                const measurements = profile.measurements || data.measurements || {};
-                
-                const hasGender = profile.gender || data.gender;
-                const hasGoal = profile.goal || data.goal;
-                const hasActivity = profile.activityLevel || data.activityLevel;
-                const hasWeight = measurements.weightKg || data.weight || data.weightKg;
-                const hasHeight = measurements.heightFt || data.heightFt || data.height;
-
-                return !!(hasGender && hasGoal && hasActivity && hasWeight && hasHeight);
-              };
-
-              for (const docSnap of snap.docs) {
-                if (docSnap.id !== userId && checkOnboardingData(docSnap.data())) {
-                  console.log('[SignUp] Found legacy profile for email, migrating to new ID:', userId);
-                  const oldData = docSnap.data();
-                  await setDoc(doc(db, 'users', userId), oldData, { merge: true });
-                  await AsyncStorage.setItem(`has_onboarded_${userId}`, 'true');
-                  foundProfile = true;
-                  break; 
-                }
-              }
-            } catch (fbQueryErr) {
-              console.error('[SignUp] Failed checking for legacy profile:', fbQueryErr);
-            }
-
-            // If no prior profile existed, create a brand new bare document.
-            if (!foundProfile) {
-              await saveUserToFirestore(userId, trimmedEmail, name).catch(console.error);
-            }
-
+            // Centralized profile check & migration
+            const { route } = await checkAndMigrateProfile(userId, trimmedEmail, name);
+            
             // Activate session
             await setActive({ session: sessionId });
             
             // Route intelligently
-            await AsyncStorage.removeItem('is_signing_in');
             Alert.alert('Success', 'Account created successfully!');
-            router.replace(foundProfile ? '/(tabs)' : '/(onboarding)/1');
-
+            router.replace(route as any);
           } catch (fbErr) {
             console.error('[SignUp] Critical Firebase/routing error:', fbErr);
-            await AsyncStorage.removeItem('is_signing_in');
             router.replace('/');
           }
         } else {
@@ -292,20 +253,59 @@ export default function SignUp() {
   };
 
   const onGoogleSignUpPress = React.useCallback(async () => {
+    if (isLoading) return;
+    
+    // 🛡️ Zero-Latency Shield: Lock the gate INSTANTLY (0ms)
+    authBridge.isSigningIn = true;
+    setIsLoading(true);
+    
     try {
-      const { createdSessionId, setActive: setOAuthActive } = await startOAuthFlow();
+      // Also set persistent storage
+      await AsyncStorage.setItem('is_signing_in', 'true');
+      
+      // Use explicit scheme for reliable native redirects
+      const redirectUrl = `aicaltrack://expo-auth-session`;
+      console.log('[SignUp] Starting OAuth flow with redirect:', redirectUrl);
+
+      const { createdSessionId, setActive: setOAuthActive } = await startOAuthFlow({
+        redirectUrl
+      });
+      
+      console.log('[SignUp] OAuth flow returned. SessionId:', createdSessionId);
+
       if (createdSessionId && setOAuthActive) {
-        await AsyncStorage.setItem('is_signing_in', 'true');
         await setOAuthActive({ session: createdSessionId });
-        await AsyncStorage.removeItem('is_signing_in');
-        router.replace('/');
+        
+        // Wait for session to stabilize
+        const userId = signUp.createdUserId || (signUpResult as any)?.createdUserId;
+        if (userId) {
+          const { route } = await checkAndMigrateProfile(
+            userId,
+            signUp.emailAddress
+          );
+          router.replace(route as any);
+        } else {
+          // Fallback if userId isn't immediately available
+          router.replace('/');
+        }
       }
-    } catch (err) {
-      await AsyncStorage.removeItem('is_signing_in');
+    } catch (err: any) {
       console.error('OAuth error:', err);
-      Alert.alert('Error', 'Google sign up failed. Please try again.');
+      // 🛡️ Release shield instantly on error/cancel
+      authBridge.isSigningIn = false;
+      await AsyncStorage.removeItem('is_signing_in').catch(() => {});
+      
+      // Clean up session if it's in an invalid state
+      await WebBrowser.coolDownAsync();
+      
+      const errMsg = err?.message || '';
+      if (!errMsg.includes('cancel') && !errMsg.includes('dismiss')) {
+        Alert.alert('Error', 'Google sign up failed. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
     }
-  }, [startOAuthFlow, router]);
+  }, [startOAuthFlow, router, isLoading, signUp, signUpResult]);
 
   // ── Verification Screen ────────────────────────────────────────────
   if (isSignedIn) {

@@ -119,7 +119,10 @@ export default function GeneratingProfile() {
         // 4. Save to Firebase
         const userRef = doc(db, 'users', user.id);
         const parsedWeight = parseFloat(weight);
+        const rawEmail = user.primaryEmailAddress?.emailAddress || user.emailAddresses?.[0]?.emailAddress || '';
+        
         await setDoc(userRef, {
+          email: rawEmail.toLowerCase(),
           profile: {
             gender,
             goal,
@@ -148,7 +151,7 @@ export default function GeneratingProfile() {
         // 6. Store for Preview Screen
         await AsyncStorage.setItem('onboarding_result_calories', finalData.dailyCalories.toString());
         await AsyncStorage.setItem('onboarding_result_protein', finalData.proteinGrams.toString());
-        await AsyncStorage.setItem('has_onboarded', 'true');
+        await AsyncStorage.setItem(`has_onboarded_${user.id}`, 'true');
 
         if (isMountedRef.current) setAiCompleted(true);
 

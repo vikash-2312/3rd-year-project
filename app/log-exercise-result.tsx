@@ -1,10 +1,10 @@
 import { useUser } from '@clerk/expo';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { format } from 'date-fns';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import React, { useState } from 'react';
-import { Alert, Platform, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Button } from '../components/Button';
 import { db } from '../lib/firebase';
 
@@ -61,7 +61,7 @@ export default function LogExerciseResultScreen() {
 
         <Text style={styles.calorieText}>{calories}</Text>
         <Text style={styles.label}>Your Workout Burned</Text>
-        
+
         <View style={styles.detailsRow}>
           <View style={styles.detailItem}>
             <Text style={styles.detailLabel}>Activity</Text>
@@ -76,8 +76,8 @@ export default function LogExerciseResultScreen() {
       </View>
 
       <View style={styles.footer}>
-        <Button 
-          title={isLogging ? "Logging..." : "Log Calories"} 
+        <Button
+          title={isLogging ? "Logging..." : "Log Calories"}
           onPress={handleLogWorkout}
           disabled={isLogging}
         />

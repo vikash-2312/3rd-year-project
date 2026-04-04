@@ -1,32 +1,30 @@
 import { useUser } from "@clerk/expo";
-import { CheckmarkCircle02Icon, ChampionIcon, Cancel01Icon, FireIcon, Apple01Icon, Activity01Icon, DropletIcon } from '@hugeicons/core-free-icons';
+import { ChampionIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { addDays, format, isSameDay, startOfWeek, subDays } from "date-fns";
+import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from "expo-router";
-import { collection, doc, onSnapshot, query, where, orderBy, limit } from "firebase/firestore";
-import React, { useEffect, useState, useCallback, useRef } from "react";
-import { ActivityIndicator, Alert, Dimensions, Image, ScrollView, StyleSheet, Text, View, TouchableOpacity, Modal, Pressable } from "react-native";
+import { collection, doc, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Dimensions, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { LineChart } from "react-native-chart-kit";
 import { SafeAreaView } from "react-native-safe-area-context";
-import * as ImagePicker from 'expo-image-picker';
-import * as Haptics from 'expo-haptics';
-import { db } from "../../lib/firebase";
-import { useTheme } from "../../lib/ThemeContext";
 import { BeforeAfterSlider } from "../../components/progress/BeforeAfterSlider";
-import { PhotoTimeline } from "../../components/progress/PhotoTimeline";
 import { FullScreenPhoto } from "../../components/progress/FullScreenPhoto";
+import { PhotoTimeline } from "../../components/progress/PhotoTimeline";
 import { ShareCard } from "../../components/progress/ShareCard";
 import { TransformationInsight } from "../../components/progress/TransformationInsight";
-import {
-  ProgressPhoto,
-  subscribeToUserPhotos,
-  deleteProgressPhoto,
-  getDayNumber,
-  getTimeLabel,
-  getBeforeAfterPhotos,
-} from "../../services/progressPhotoService";
 import { StreakModal } from "../../components/StreakModal";
-import { subscribeToActiveDays, getWeekDays, calculateStreak } from "../../services/streakService";
+import { db } from "../../lib/firebase";
+import { useTheme } from "../../lib/ThemeContext";
+import {
+  deleteProgressPhoto,
+  getBeforeAfterPhotos,
+  ProgressPhoto,
+  subscribeToUserPhotos
+} from "../../services/progressPhotoService";
+import { calculateStreak, subscribeToActiveDays } from "../../services/streakService";
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -41,7 +39,7 @@ export default function Analytics() {
   const [dailyWater, setDailyWater] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
   const [isLoading, setIsLoading] = useState(true);
   const [isStreakModalVisible, setIsStreakModalVisible] = useState(false);
-  const [weightHistory, setWeightHistory] = useState<{date: string, weight: number}[]>([]);
+  const [weightHistory, setWeightHistory] = useState<{ date: string, weight: number }[]>([]);
 
   // Progress Photo State
   const [progressPhotos, setProgressPhotos] = useState<ProgressPhoto[]>([]);
@@ -67,9 +65,13 @@ export default function Analytics() {
     });
 
     // 2. Fetch Weekly Logs for Streak and Energy
+    const thirtyDaysAgo = subDays(new Date(), 30);
+    const thirtyDaysAgoStr = format(thirtyDaysAgo, 'yyyy-MM-dd');
+
     const logsQuery = query(
       collection(db, 'logs'),
-      where('userId', '==', user.id)
+      where('userId', '==', user.id),
+      where('date', '>=', thirtyDaysAgoStr)
     );
 
     const unsubscribeLogs = onSnapshot(logsQuery, (snapshot) => {
@@ -83,7 +85,7 @@ export default function Analytics() {
         if (data.date) {
           activeDays.add(data.date);
           const cal = data.calories || 0;
-          
+
           if (data.type === 'food') {
             consumedByDay[data.date] = (consumedByDay[data.date] || 0) + cal;
           } else if (data.type === 'exercise') {
@@ -99,7 +101,7 @@ export default function Analytics() {
       const consArr = weekDays.map(d => Math.round(consumedByDay[format(d, 'yyyy-MM-dd')] || 0));
       const burnArr = weekDays.map(d => Math.round(burnedByDay[format(d, 'yyyy-MM-dd')] || 0));
       const waterArr = weekDays.map(d => Number((waterByDay[format(d, 'yyyy-MM-dd')] || 0).toFixed(1)));
-      
+
       setDailyConsumed(consArr);
       setDailyBurned(burnArr);
       setDailyWater(waterArr);
@@ -107,10 +109,11 @@ export default function Analytics() {
     });
 
     // 3. Fetch Weight History for Trend Graph
-    // Simplified query (no orderBy) to avoid composite index requirement
     const weightQuery = query(
       collection(db, 'weight_logs'),
-      where('userId', '==', user.id)
+      where('userId', '==', user.id),
+      orderBy('date', 'desc'),
+      limit(30)
     );
 
     const unsubscribeWeight = onSnapshot(weightQuery, (snapshot) => {
@@ -120,7 +123,7 @@ export default function Analytics() {
           weight: doc.data().weightKg
         }))
         .sort((a, b) => a.date.localeCompare(b.date)); // Chronological order
-      
+
       // Limit to last 30 entries
       setWeightHistory(history.slice(-30));
     }, (error) => {
@@ -157,13 +160,13 @@ export default function Analytics() {
   const handleAddProgressPhoto = useCallback(async () => {
     const showPicker = async (useCamera: boolean) => {
       try {
-        const { status } = useCamera 
+        const { status } = useCamera
           ? await ImagePicker.requestCameraPermissionsAsync()
           : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
         if (status !== 'granted') {
           Alert.alert(
-            'Permission Required', 
+            'Permission Required',
             `We need ${useCamera ? 'camera' : 'gallery'} access to add progress photos.`
           );
           return;
@@ -251,7 +254,7 @@ export default function Analytics() {
   }, []);
   const latestLoggedWeight = weightHistory.length > 0 ? weightHistory[weightHistory.length - 1].weight : null;
   const weight = latestLoggedWeight || userData?.profile?.measurements?.weightKg || userData?.onboarding_weight || "--";
-  
+
   const totalConsumed = dailyConsumed.reduce((a, b) => a + b, 0);
   const totalBurned = dailyBurned.reduce((a, b) => a + b, 0);
   const netEnergy = totalConsumed - totalBurned;
@@ -284,41 +287,56 @@ export default function Analytics() {
     color: (opacity = 1) => isDark ? `rgba(226, 232, 240, ${opacity})` : `rgba(45, 55, 72, ${opacity})`,
     labelColor: (opacity = 1) => isDark ? `rgba(160, 174, 192, ${opacity})` : `rgba(113, 128, 150, ${opacity})`,
     barPercentage: 0.4, // Reduced to prevent overlap for interleaved 14 bars
-    barRadius: 4, 
+    barRadius: 4,
     propsForBackgroundLines: {
       strokeDasharray: '4',
       stroke: colors.border,
     },
   };
 
+  const targetWeight = userData?.profile?.measurements?.targetWeightKg || null;
   const minWeight = weightHistory.length > 0 ? Math.min(...weightHistory.map(h => h.weight)) : 50;
   const maxWeight = weightHistory.length > 0 ? Math.max(...weightHistory.map(h => h.weight)) : 100;
-  const weightRange = maxWeight - minWeight;
-  // If the range is too small (e.g. all 60.0), the Y-axis repeats labels. 
-  // We force it to have at least a 2kg range to ensure unique labels.
-  const padding = weightRange < 2 ? 1 : 0.5;
+
+  // Bug Fix: Minimum 2.5kg spread for clean Y-axis labels even on flat data
+  const dataMin = targetWeight ? Math.min(minWeight, targetWeight) : minWeight;
+  const dataMax = targetWeight ? Math.max(maxWeight, targetWeight) : maxWeight;
+  const range = dataMax - dataMin;
+  const padding = Math.max(range * 0.2, 1.25); // Minimum 1.25kg padding on each side (2.5kg total spread)
 
   const weightTrendData = {
-    labels: weightHistory.length === 1
-      ? ["Baseline", format(new Date(weightHistory[0].date), 'MMM d')]
-      : (weightHistory.length > 1
-          ? weightHistory.map((h, i) =>
-              i % Math.max(1, Math.floor(weightHistory.length / 5)) === 0
-                ? format(new Date(h.date), 'MMM d')
-                : ""
-            )
-          : ["No Data"]),
+    labels: weightHistory.length <= 1
+      ? ["Today"]
+      : weightHistory.map((h, i) => {
+        // Only show labels for first, middle, and last points to ensure zero overlap
+        const isFirst = i === 0;
+        const isLast = i === weightHistory.length - 1;
+        const isMid = i === Math.floor(weightHistory.length / 2);
+
+        if (isFirst || isLast || (isMid && weightHistory.length > 3)) {
+          return format(new Date(h.date), 'MMM d');
+        }
+        return "";
+      }),
     datasets: [
+      // Primary weight line
       {
         data: weightHistory.length === 1
           ? [weightHistory[0].weight, weightHistory[0].weight]
           : (weightHistory.length > 0 ? weightHistory.map(h => h.weight) : [0]),
         color: (opacity = 1) => `rgba(0, 144, 80, ${opacity})`,
-        strokeWidth: 2
+        strokeWidth: 3
       },
-      // Invisible dataset to force a minimum Y-axis range
+      // Optional Goal Line
+      ...(targetWeight ? [{
+        data: weightHistory.length <= 1 ? [targetWeight, targetWeight] : weightHistory.map(() => targetWeight),
+        color: (opacity = 1) => isDark ? `rgba(214, 158, 46, 0.4)` : `rgba(214, 158, 46, 0.3)`, // Gold/Yellow
+        strokeWidth: 1,
+        withDots: false,
+      }] : []),
+      // Invisible dataset to force range
       {
-        data: [minWeight - padding, maxWeight + padding],
+        data: [dataMin - padding, dataMax + padding],
         withDots: false,
         color: () => 'transparent',
         strokeWidth: 0,
@@ -373,7 +391,8 @@ export default function Analytics() {
         />
 
         {/* Weight Trend Card */}
-        {weightHistory.length > 0 && (() => {
+        {/* Weight Trend Card */}
+        {weightHistory.length > 0 ? (() => {
           const firstWeight = weightHistory[0].weight;
           const latestWeight = weightHistory[weightHistory.length - 1].weight;
           const weightChange = latestWeight - firstWeight;
@@ -383,80 +402,104 @@ export default function Analytics() {
           const lastDate = weightHistory[weightHistory.length - 1].date;
 
           return (
-          <View style={[styles.card, styles.energyCard, { backgroundColor: colors.card, marginTop: 16 }]}>
-            {/* Header Row */}
-            <View style={styles.energyHeaderRow}>
-              <View>
-                <Text style={[styles.cardHeaderTitle, { color: colors.text, marginBottom: 0 }]}>Weight Trend</Text>
-                <Text style={[styles.energySubtitle, { color: colors.textMuted }]}>
-                  {weightHistory.length} {weightHistory.length === 1 ? 'entry' : 'entries'} tracked
+            <View style={[styles.card, styles.energyCard, { backgroundColor: colors.card, marginTop: 16 }]}>
+              {/* Header Row */}
+              <View style={styles.energyHeaderRow}>
+                <View>
+                  <View style={styles.flexRowAlignCenter}>
+                    <Text style={[styles.cardHeaderTitle, { color: colors.text, marginBottom: 0 }]}>Weight Trend</Text>
+                    {targetWeight && (
+                      <View style={[styles.targetBadge, { backgroundColor: isDark ? '#2D2914' : '#FFFFF0' }]}>
+                        <Text style={[styles.targetBadgeText, { color: colors.warning }]}>Goal: {targetWeight}kg</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={[styles.energySubtitle, { color: colors.textMuted }]}>
+                    {weightHistory.length} {weightHistory.length === 1 ? 'entry' : 'entries'} tracked
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => router.push('/update-weight' as any)}
+                  style={[styles.energyHeaderBadge, { backgroundColor: isDark ? '#1A2A3B' : '#EBF8FF' }]}>
+                  <Text style={[styles.energyHeaderBadgeText, { color: colors.blue }]}>Update</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Stat Pills */}
+              <View style={styles.energyPillsRow}>
+                <View style={[styles.energyPill, { backgroundColor: isDark ? '#1A2A3B' : '#EBF8FF' }]}>
+                  <View style={[styles.pillDot, { backgroundColor: colors.blue }]} />
+                  <View>
+                    <Text style={[styles.pillValue, { color: colors.blue }]}>{latestWeight.toFixed(1)}</Text>
+                    <Text style={[styles.pillLabel, { color: colors.textTertiary }]}>Current</Text>
+                  </View>
+                </View>
+                <View style={[styles.energyPill, { backgroundColor: isLoss ? (isDark ? '#1C3829' : '#F0FFF4') : isGain ? (isDark ? '#3B1A1A' : '#FFF5F5') : (isDark ? '#22262F' : '#F7FAFC') }]}>
+                  <View style={[styles.pillDot, { backgroundColor: isLoss ? colors.accent : isGain ? colors.danger : colors.textMuted }]} />
+                  <View>
+                    <Text style={[styles.pillValue, { color: isLoss ? colors.accent : isGain ? colors.danger : colors.textMuted }]}>
+                      {weightChange > 0 ? '+' : ''}{weightChange.toFixed(1)}
+                    </Text>
+                    <Text style={[styles.pillLabel, { color: colors.textTertiary }]}>Change</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={[styles.chartWrapper, { marginTop: 10 }]}>
+                <LineChart
+                  data={weightTrendData}
+                  width={SCREEN_WIDTH - 88}
+                  height={200}
+                  chartConfig={{
+                    ...chartConfig,
+                    decimalPlaces: 1,
+                    color: (opacity = 1) => isDark ? `rgba(99, 179, 237, ${opacity})` : `rgba(49, 130, 206, ${opacity})`,
+                    fillShadowGradientFrom: isDark ? '#63B3ED' : '#3182CE',
+                    fillShadowGradientFromOpacity: 0.2,
+                    fillShadowGradientTo: isDark ? '#63B3ED' : '#3182CE',
+                    fillShadowGradientToOpacity: 0.01,
+                    propsForDots: {
+                      r: '5',
+                      strokeWidth: '2',
+                      stroke: isDark ? '#63B3ED' : '#3182CE',
+                      fill: colors.card,
+                    },
+                  }}
+                  style={styles.energyChart}
+                  fromZero={false}
+                  segments={4}
+                  formatYLabel={(yValue) => `${parseFloat(yValue).toFixed(1)}`}
+                  bezier
+                  withInnerLines={true}
+                  withOuterLines={false}
+                  withVerticalLines={false}
+                />
+              </View>
+
+              {/* Footer with date range */}
+              <View style={[styles.weightTrendFooter, { borderTopColor: colors.border }]}>
+                <Text style={[styles.weightTrendFooterText, { color: colors.textMuted }]}>
+                  {format(new Date(firstDate), 'MMM d, yyyy')} — {format(new Date(lastDate), 'MMM d, yyyy')}
                 </Text>
               </View>
-              <View style={[styles.energyHeaderBadge, { backgroundColor: isDark ? '#1A2A3B' : '#EBF8FF' }]}>
-                <Text style={[styles.energyHeaderBadgeText, { color: colors.blue }]}>kg</Text>
-              </View>
             </View>
-
-            {/* Stat Pills */}
-            <View style={styles.energyPillsRow}>
-              <View style={[styles.energyPill, { backgroundColor: isDark ? '#1A2A3B' : '#EBF8FF' }]}>
-                <View style={[styles.pillDot, { backgroundColor: colors.blue }]} />
-                <View>
-                  <Text style={[styles.pillValue, { color: colors.blue }]}>{latestWeight.toFixed(1)}</Text>
-                  <Text style={[styles.pillLabel, { color: colors.textTertiary }]}>Current</Text>
-                </View>
-              </View>
-              <View style={[styles.energyPill, { backgroundColor: isLoss ? (isDark ? '#1C3829' : '#F0FFF4') : isGain ? (isDark ? '#3B1A1A' : '#FFF5F5') : (isDark ? '#22262F' : '#F7FAFC') }]}>
-                <View style={[styles.pillDot, { backgroundColor: isLoss ? colors.accent : isGain ? colors.danger : colors.textMuted }]} />
-                <View>
-                  <Text style={[styles.pillValue, { color: isLoss ? colors.accent : isGain ? colors.danger : colors.textMuted }]}>
-                    {weightChange > 0 ? '+' : ''}{weightChange.toFixed(1)}
-                  </Text>
-                  <Text style={[styles.pillLabel, { color: colors.textTertiary }]}>Change</Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.chartWrapper}>
-              <LineChart
-                data={weightTrendData}
-                width={SCREEN_WIDTH - 88}
-                height={200}
-                chartConfig={{
-                  ...chartConfig,
-                  decimalPlaces: 1,
-                  color: (opacity = 1) => isDark ? `rgba(99, 179, 237, ${opacity})` : `rgba(49, 130, 206, ${opacity})`,
-                  fillShadowGradientFrom: isDark ? '#63B3ED' : '#3182CE',
-                  fillShadowGradientFromOpacity: 0.2,
-                  fillShadowGradientTo: isDark ? '#63B3ED' : '#3182CE',
-                  fillShadowGradientToOpacity: 0.01,
-                  propsForDots: {
-                    r: '4',
-                    strokeWidth: '2',
-                    stroke: isDark ? '#63B3ED' : '#3182CE',
-                    fill: colors.card,
-                  },
-                }}
-                style={styles.energyChart}
-                fromZero={false}
-                segments={4}
-                formatYLabel={(yValue) => `${parseFloat(yValue).toFixed(1)}`}
-                bezier
-                withInnerLines={true}
-                withOuterLines={false}
-                withVerticalLines={false}
-              />
-            </View>
-
-            {/* Footer with date range */}
-            <View style={[styles.weightTrendFooter, { borderTopColor: colors.border }]}>
-              <Text style={[styles.weightTrendFooterText, { color: colors.textMuted }]}>
-                {format(new Date(firstDate), 'MMM d, yyyy')} — {format(new Date(lastDate), 'MMM d, yyyy')}
-              </Text>
-            </View>
-          </View>
           );
-        })()}
+        })() : (
+          <TouchableOpacity
+            style={[styles.card, styles.unlockCard, { backgroundColor: colors.card, borderStyle: 'dashed', borderWidth: 2, borderColor: colors.border }]}
+            onPress={() => router.push('/update-weight' as any)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.unlockIconContainer, { backgroundColor: colors.accentLight }]}>
+              <HugeiconsIcon icon={ChampionIcon} size={28} color={colors.accent} />
+            </View>
+            <Text style={[styles.unlockTitle, { color: colors.text }]}>Unlock Your Weight Trend</Text>
+            <Text style={[styles.unlockSubtitle, { color: colors.textMuted }]}>Log your weight to start visualizing your transformation journey.</Text>
+            <View style={[styles.unlockButton, { backgroundColor: colors.accent }]}>
+              <Text style={styles.unlockButtonText}>Update Weight</Text>
+            </View>
+          </TouchableOpacity>
+        )}
 
         {/* Weekly Energy Card */}
         <View style={[styles.card, styles.energyCard, { backgroundColor: colors.card }]}>
@@ -641,22 +684,7 @@ export default function Analytics() {
           </TouchableOpacity>
         </View>
 
-        {/* AI Health Insights Card */}
-        <TouchableOpacity 
-          style={[styles.card, styles.aiCard, { backgroundColor: colors.purpleLight, borderColor: colors.purpleBorder }]}
-          onPress={() => router.push('/ai-insights' as any)}
-          activeOpacity={0.8}
-        >
-          <View style={styles.aiCardContent}>
-            <View style={[styles.aiIconContainer, { backgroundColor: colors.purple }]}>
-              <HugeiconsIcon icon={Activity01Icon} size={28} color="#FFFFFF" />
-            </View>
-            <View style={styles.aiTextContainer}>
-              <Text style={[styles.aiTitle, { color: colors.purpleText }]}>AI Health Insights</Text>
-              <Text style={[styles.aiSubtitle, { color: colors.purpleSubtext }]}>Discover how your weekly meals affect your long-term health.</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
+
 
 
         {/* Streak Detail Modal */}
@@ -775,16 +803,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    paddingHorizontal: 2, 
+    paddingHorizontal: 2,
   },
   dayColumn: {
     alignItems: 'center',
     gap: 4,
   },
   circleIndicator: {
-    width: 14, 
+    width: 14,
     height: 14,
-    borderRadius: 7, 
+    borderRadius: 7,
     borderWidth: 1.5,
     borderColor: '#EDF2F7',
     backgroundColor: '#FFFFFF',
@@ -835,8 +863,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   streakValue: {
-    fontSize: 28, 
-    fontWeight: '900', 
+    fontSize: 28,
+    fontWeight: '900',
     color: '#2D3748',
   },
   streakUnit: {
@@ -846,42 +874,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  // AI Insights Card Styles
-  aiCard: {
-    marginTop: 20,
-    backgroundColor: '#FAF5FF',
-    borderColor: '#E9D8FD',
-    borderWidth: 1,
-  },
-  aiCardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    padding: 8,
-  },
-  aiIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: '#805AD5',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  aiTextContainer: {
-    flex: 1,
-  },
-  aiTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#322659',
-    marginBottom: 4,
-  },
-  aiSubtitle: {
-    fontSize: 13,
-    color: '#553C9A',
-    fontWeight: '500',
-    lineHeight: 18,
-  },
+
 
   // Chart Card Styles
   chartCard: {
@@ -995,7 +988,7 @@ const styles = StyleSheet.create({
     color: '#009050',
   },
   netValue: {
-    color: '#D69E2E', 
+    color: '#D69E2E',
   },
   energyStatLabel: {
     fontSize: 11,
@@ -1158,5 +1151,65 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
+  },
+
+  // Empty State Styles
+  unlockCard: {
+    marginTop: 16,
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unlockIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  unlockTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  unlockSubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+  unlockButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 16,
+    shadowColor: '#009050',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  unlockButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  flexRowAlignCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  targetBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  targetBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
 });

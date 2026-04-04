@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter, useSegments } from "expo-router";
+import { useEffect } from "react";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/Button';
 import { ArrowRight01Icon } from '@hugeicons/core-free-icons';
@@ -10,6 +11,11 @@ const { width } = Dimensions.get('window');
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    console.log('[Welcome] Page mounted. Segments:', segments);
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>

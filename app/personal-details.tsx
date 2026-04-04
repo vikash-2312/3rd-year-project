@@ -58,6 +58,7 @@ export default function PersonalDetails() {
   const [water, setWater] = useState('');
   const [steps, setSteps] = useState('');
   const [sleep, setSleep] = useState('');
+  const [targetWeight, setTargetWeight] = useState('');
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -86,6 +87,7 @@ export default function PersonalDetails() {
           // Lifestyle (with defaults if not present)
           setSteps(data.macros?.dailySteps?.toString() || '10000');
           setSleep(data.macros?.dailySleep?.toString() || '8');
+          setTargetWeight(data.measurements?.targetWeightKg?.toString() || '');
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
@@ -112,6 +114,7 @@ export default function PersonalDetails() {
         'profile.gender': gender,
         'profile.goal': goal,
         'profile.activityLevel': activityLevel,
+        'profile.measurements.targetWeightKg': parseFloat(targetWeight) || 0,
         'profile.macros.dailyCalories': parseInt(calories) || 0,
         'profile.macros.proteinGrams': parseInt(protein) || 0,
         'profile.macros.carbsGrams': parseInt(carbs) || 0,
@@ -206,6 +209,11 @@ export default function PersonalDetails() {
                   {renderInput('Ht (In)', heightIn, setHeightIn, '10', 'number-pad')}
                 </View>
               </View>
+            </View>
+            <View style={styles.row}>
+               <View style={{ flex: 1 }}>
+                 {renderInput('Target Weight', targetWeight, setTargetWeight, '65', 'decimal-pad', 'kg')}
+               </View>
             </View>
           </View>
 

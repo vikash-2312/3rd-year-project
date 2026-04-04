@@ -85,7 +85,7 @@ export async function uploadProgressPhoto(
     storagePath,
     date,
     weight,
-    createdAt: Timestamp.now(),
+    createdAt: photoData.createdAt, // Consistent with local serverTimestamp fallback logic
   };
 }
 

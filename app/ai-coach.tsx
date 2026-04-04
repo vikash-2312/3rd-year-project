@@ -1,5 +1,5 @@
 /**
- * ai-chat.tsx
+ * ai-coach.tsx
  *
  * Premium AI Fitness Coach chat screen.
  * Features: smart formatted bubbles, contextual quick-action buttons,
@@ -356,7 +356,7 @@ function MessageBubble({
 }
 
 // --- Main Screen ---
-export default function AIChatScreen() {
+export default function AICoachScreen() {
   const router = useRouter();
   const { colors, isDark } = useTheme();
   const { messages, isLoading, sendMessage, clearChat } = useChat();

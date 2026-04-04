@@ -1,13 +1,16 @@
 import { useClerk, useOAuth, useSignIn } from '@clerk/expo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Link, useRouter } from 'expo-router';
+import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import { authBridge } from '../../lib/auth-bridge';
 import { doc, getDocFromServer, collection, query, where, getDocs, setDoc } from 'firebase/firestore';
 import React from 'react';
 import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Button } from '../../components/Button';
 import { InputField } from '../../components/InputField';
 import { useWarmUpBrowser } from '../../hooks/useWarmUpBrowser';
+import { checkAndMigrateProfile } from '../../hooks/useAuthCheck';
 import { db } from '../../lib/firebase';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -86,7 +89,10 @@ export default function SignIn() {
   const signIn = (signInResult?.create || signInResult?.id)
     ? signInResult
     : (signInResult?.signIn?.create ? signInResult.signIn : (signInResult?.signIn || null));
-  const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
+  const { startOAuthFlow } = useOAuth({ 
+    strategy: 'oauth_google',
+    redirectUrl: AuthSession.makeRedirectUri()
+  });
   const router = useRouter();
 
   const [emailAddress, setEmailAddress] = React.useState('');
@@ -250,115 +256,30 @@ export default function SignIn() {
 
       console.log('[SignIn] Resolved User ID:', activeUserId);
 
-      let routeHref = '/';
+      let targetRoute: '/(tabs)' | '/(onboarding)/1' | '/' = '/';
 
       if (activeUserId) {
         try {
-          // 1. Fast path: check local storage first
-          const hasOnboardedLocal = await AsyncStorage.getItem(`has_onboarded_${activeUserId}`);
-          console.log('[SignIn] Local onboarding status:', hasOnboardedLocal);
-
-          if (hasOnboardedLocal === 'true') {
-            console.log('[SignIn] Onboarded locally, redirecting to tabs');
-            routeHref = '/(tabs)';
-          } else {
-            // 2. Slow path: check Firestore (server fetch to avoid stale cache)
-            const userRef = doc(db, 'users', activeUserId);
-            const userDoc = await getDocFromServer(userRef);
-            console.log('[SignIn] Firestore doc exists:', userDoc.exists());
-
-            const checkOnboardingData = (data: any) => {
-              if (!data) return false;
-              
-              // 1. Explicit flags
-              if (data.hasOnboarded === true || data.onboardingCompleted === true) return true;
-
-              // 2. Strict field verification (nested in 'profile' OR legacy flat)
-              const profile = data.profile || {};
-              const measurements = profile.measurements || data.measurements || {};
-              
-              const hasGender = profile.gender || data.gender;
-              const hasGoal = profile.goal || data.goal;
-              const hasActivity = profile.activityLevel || data.activityLevel;
-              const hasWeight = measurements.weightKg || data.weight || data.weightKg;
-              const hasHeight = measurements.heightFt || data.heightFt || data.height;
-
-              return !!(hasGender && hasGoal && hasActivity && hasWeight && hasHeight);
-            };
-
-            let profileFound = false;
-
-            if (userDoc.exists() && checkOnboardingData(userDoc.data())) {
-              // Doc found with complete profile under current user ID
-              console.log('[SignIn] Profile complete under current user ID');
-              await AsyncStorage.setItem(`has_onboarded_${activeUserId}`, 'true');
-              profileFound = true;
-            } else {
-              // 3. Fallback: Check for completed profiles matching the user's email
-              let extractedEmail = '';
-              try {
-                const cUser = clerk.user as any;
-                extractedEmail = cUser?.primaryEmailAddress?.emailAddress || 
-                                 cUser?.emailAddresses?.[0]?.emailAddress || 
-                                 currentResult?.identifier || 
-                                 si?.identifier || 
-                                 si?.userData?.emailAddress || 
-                                 si?.supportedFirstFactors?.find((f:any) => f.emailAddress)?.emailAddress ||
-                                 si?.firstFactorVerification?.emailAddress || 
-                                 emailAddress;
-              } catch (e) {
-                console.error('[SignIn] Failed to extract email:', e);
-              }
-              
-              const userEmail = extractedEmail?.trim().toLowerCase();
-              console.log('[SignIn] Profile lacking on current ID. Trying email fallback for:', userEmail);
-
-              if (userEmail) {
-                try {
-                  const usersRef = collection(db, 'users');
-                  const q = query(usersRef, where('email', '==', userEmail.toLowerCase()));
-                  const snap = await getDocs(q);
-
-                  for (const docSnap of snap.docs) {
-                    if (docSnap.id !== activeUserId && checkOnboardingData(docSnap.data())) {
-                      // Found older profile — migrate it
-                      console.log('[SignIn] Found profile under old ID:', docSnap.id, '→ migrating to', activeUserId);
-                      const oldData = docSnap.data();
-                      await setDoc(doc(db, 'users', activeUserId), oldData, { merge: true });
-                      await AsyncStorage.setItem(`has_onboarded_${activeUserId}`, 'true');
-                      profileFound = true;
-                      break; // Stop after migrating the first valid profile found
-                    }
-                  }
-                } catch (emailErr) {
-                  console.error('[SignIn] Email-based lookup failed:', formatError(emailErr));
-                }
-              }
-            }
-
-            // 4. Final routing decision
-            if (profileFound) {
-              routeHref = '/(tabs)';
-            } else {
-              console.log('[SignIn] No onboarding data found anywhere, routing to onboarding');
-              routeHref = '/(onboarding)/1';
-            }
-          }
+          // Centralized onboarding & migration check
+          const { route } = await checkAndMigrateProfile(
+            activeUserId,
+            emailAddress.trim().toLowerCase() || clerk.user?.primaryEmailAddress?.emailAddress
+          );
+          targetRoute = route;
         } catch (storageErr) {
-          console.error('[SignIn] Storage/Firestore check failed:', formatError(storageErr));
-          routeHref = '/';
+          console.error('[SignIn] Unified check failed:', formatError(storageErr));
+          targetRoute = '/';
         }
       } else {
         console.warn('[SignIn] Could not resolve user ID, falling back to index hub');
-        routeHref = '/';
+        targetRoute = '/';
       }
 
-      // Clear the sign-in routing lock and navigate
-      await AsyncStorage.removeItem('is_signing_in');
-      console.log('[SignIn] Navigating to:', routeHref);
-      router.replace(routeHref as any);
+      // We do NOT remove 'is_signing_in' here anymore. 
+      // The Root Layout (InitialLayout) will clear it once it detects isSignedIn is true.
+      console.log('[SignIn] Navigating to:', targetRoute);
+      router.replace(targetRoute as any);
     } catch (activeErr) {
-      await AsyncStorage.removeItem('is_signing_in');
       console.error('[SignIn] setActive failed:', formatError(activeErr));
       Alert.alert('Activation Error', formatError(activeErr));
     }
@@ -450,17 +371,58 @@ export default function SignIn() {
   };
 
   const onGoogleSignInPress = React.useCallback(async () => {
+    if (isLoading) return;
+    
+    // 🛡️ Zero-Latency Shield: Lock the gate INSTANTLY (0ms)
+    authBridge.isSigningIn = true;
+    setIsLoading(true);
+    
     try {
-      const { createdSessionId, setActive: setOAuthActive } = await startOAuthFlow();
+      // Also set persistent storage for backgrounding resilience
+      await AsyncStorage.setItem('is_signing_in', 'true');
+      
+      // Use explicit scheme for reliable native redirects
+      const redirectUrl = `aicaltrack://expo-auth-session`;
+      console.log('[SignIn] Starting OAuth flow with redirect:', redirectUrl);
+
+      const { createdSessionId, setActive: setOAuthActive } = await startOAuthFlow({
+        redirectUrl
+      });
+      
+      console.log('[SignIn] OAuth flow returned. SessionId:', createdSessionId);
+
       if (createdSessionId && setOAuthActive) {
         await setOAuthActive({ session: createdSessionId });
-        router.replace('/');
+        
+        // Wait for session to stabilize
+        const userId = await waitForClerkUser();
+        if (userId) {
+          const { route } = await checkAndMigrateProfile(
+            userId,
+            clerk.user?.primaryEmailAddress?.emailAddress
+          );
+          router.replace(route as any);
+        } else {
+          router.replace('/');
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('OAuth error:', err);
-      Alert.alert('Error', 'Google sign in failed. Please try again.');
+      // 🛡️ Release shield instantly on error/cancel
+      authBridge.isSigningIn = false;
+      await AsyncStorage.removeItem('is_signing_in').catch(() => {});
+      
+      // Clean up session if it's in an invalid state
+      await WebBrowser.coolDownAsync();
+      
+      const errMsg = err?.message || '';
+      if (!errMsg.includes('cancel') && !errMsg.includes('dismiss')) {
+        Alert.alert('Error', 'Google sign in failed. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
     }
-  }, [startOAuthFlow, router]);
+  }, [startOAuthFlow, router, isLoading]);
 
   // ── Verification Screen (for Client Trust / MFA) ────────────────────
   if (showVerification) {
