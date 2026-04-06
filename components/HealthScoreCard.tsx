@@ -16,7 +16,7 @@ interface HealthScoreCardProps {
   calorieGoal: number;
 }
 
-export function HealthScoreCard({
+export const HealthScoreCard = React.memo(({
   weightKg,
   protein,
   carbs,
@@ -25,7 +25,7 @@ export function HealthScoreCard({
   waterLiters,
   caloriesConsumed,
   calorieGoal,
-}: HealthScoreCardProps) {
+}: HealthScoreCardProps) => {
   const { colors, isDark } = useTheme();
   
   // 1. Protein Score (0-20)
@@ -147,7 +147,7 @@ export function HealthScoreCard({
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {

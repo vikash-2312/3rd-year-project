@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button } from '../../components/Button';
+import { useUser } from '@clerk/expo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { AArrowUpIcon, AArrowDownIcon, ApproximatelyEqualIcon } from '@hugeicons/core-free-icons';
@@ -9,11 +10,12 @@ import * as Haptics from 'expo-haptics';
 
 export default function Step2Goal() {
   const router = useRouter();
+  const { user } = useUser();
   const [selectedGoal, setSelectedGoal] = useState<string | null>(null);
 
   const handleNext = async () => {
-    if (selectedGoal) {
-      await AsyncStorage.setItem('onboarding_goal', selectedGoal);
+    if (selectedGoal && user?.id) {
+      await AsyncStorage.setItem(`onboarding_goal_${user.id}`, selectedGoal);
       router.push('/(onboarding)/3');
     }
   };
@@ -53,7 +55,7 @@ export default function Step2Goal() {
       <Button 
         title="Continue" 
         onPress={handleNext} 
-        disabled={!selectedGoal}
+        disabled={!selectedGoal || !user?.id}
         style={styles.button}
       />
     </View>

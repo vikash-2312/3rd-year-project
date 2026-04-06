@@ -1,6 +1,7 @@
 import { addDays, format, isSameDay, startOfWeek, subWeeks } from 'date-fns';
 import React, { useEffect, useRef, useState } from 'react';
 import { Dimensions, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '../lib/ThemeContext';
 
 type DayData = {
@@ -19,6 +20,7 @@ export function WeeklyCalendar({ selectedDate: propsSelectedDate, onDateSelect }
 
   const selectedDate = propsSelectedDate || internalSelectedDate;
   const setSelectedDate = (date: Date) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (onDateSelect) {
       onDateSelect(date);
     } else {

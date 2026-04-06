@@ -5,6 +5,7 @@ import {
   Text,
   StyleSheet,
   Dimensions,
+  TouchableOpacity,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -22,10 +23,17 @@ import Animated, {
   Easing,
   interpolate,
   useAnimatedReaction,
+  Layout,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../lib/ThemeContext';
 import { ProgressPhoto, getDayNumber } from '../../services/progressPhotoService';
+import { HugeiconsIcon } from '@hugeicons/react-native';
+import { 
+  ViewIcon, 
+  SparklesIcon,
+  Layers01Icon
+} from '@hugeicons/core-free-icons';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SLIDER_WIDTH = SCREEN_WIDTH - 48;
@@ -42,6 +50,7 @@ export function BeforeAfterSlider({ beforePhoto, afterPhoto, firstPhoto }: Befor
   const { colors, isDark } = useTheme();
   const sliderX = useSharedValue(SLIDER_WIDTH / 2);
   const [hasInteracted, setHasInteracted] = useState(false);
+  const [renderMode, setRenderMode] = useState<'compare' | 'ghost'>('compare');
 
   const beforeDay = useMemo(() => {
     if (!beforePhoto || !firstPhoto) return 1;
@@ -78,9 +87,18 @@ export function BeforeAfterSlider({ beforePhoto, afterPhoto, firstPhoto }: Befor
     })
     .hitSlop({ horizontal: 24, vertical: 24 });
 
-  const clipStyle = useAnimatedStyle(() => ({
-    width: sliderX.value,
-  }));
+  const clipStyle = useAnimatedStyle(() => {
+    if (renderMode === 'ghost') {
+      return {
+        width: SLIDER_WIDTH,
+        opacity: interpolate(sliderX.value, [0, SLIDER_WIDTH], [0, 1]),
+      };
+    }
+    return {
+      width: sliderX.value,
+      opacity: 1,
+    };
+  });
 
   const handleStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: sliderX.value - HANDLE_SIZE / 2 }],
@@ -88,6 +106,7 @@ export function BeforeAfterSlider({ beforePhoto, afterPhoto, firstPhoto }: Befor
 
   const lineStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: sliderX.value - 1.5 }],
+    opacity: withTiming(renderMode === 'compare' ? 1 : 0),
   }));
 
   // Pulsing hint animation
@@ -168,24 +187,48 @@ export function BeforeAfterSlider({ beforePhoto, afterPhoto, firstPhoto }: Befor
     );
   }
 
-  // === FULL COMPARISON: 2+ photos ===
+  // --- FULL COMPARISON: 2+ photos ---
   return (
-    <Animated.View entering={FadeIn.duration(600)} style={[styles.container, { backgroundColor: colors.card }]}>
+    <Animated.View 
+      layout={Layout.springify()}
+      entering={FadeIn.duration(600)} 
+      style={[styles.container, { backgroundColor: colors.card }]}
+    >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Transformation</Text>
-        <View style={[styles.badge, { backgroundColor: isDark ? '#1C3829' : '#F0FFF4' }]}>
-          <Text style={[styles.badgeText, { color: colors.accent }]}>
-            {isSameDay ? 'Same day' : `${dayDiff} days`}
-          </Text>
+        <View>
+          <Text style={[styles.title, { color: colors.text }]}>Transformation</Text>
+          <View style={[styles.badge, { backgroundColor: isDark ? '#1C3829' : '#F0FFF4' }]}>
+            <Text style={[styles.badgeText, { color: colors.accent }]}>
+              {isSameDay ? 'Same day' : `${dayDiff} days`}
+            </Text>
+          </View>
         </View>
+
+        <TouchableOpacity 
+          style={[styles.modeToggle, { backgroundColor: isDark ? '#2D3748' : '#EDF2F7' }]}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setRenderMode(prev => prev === 'compare' ? 'ghost' : 'compare');
+          }}
+          activeOpacity={0.7}
+        >
+          <HugeiconsIcon 
+            icon={renderMode === 'compare' ? ViewIcon : Layers01Icon} 
+            size={18} 
+            color={colors.accent} 
+          />
+          <Text style={[styles.modeToggleText, { color: colors.textSecondary }]}>
+            {renderMode === 'compare' ? 'Slider' : 'Ghost'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Same day message */}
       {isSameDay ? (
         <View style={styles.sliderContainer}>
           <Image
-            source={{ uri: afterPhoto!.imageUrl }}
+            source={{ uri: afterPhoto?.imageUrl || beforePhoto?.imageUrl || '' }}
             style={styles.fullImage}
             resizeMode="cover"
           />
@@ -200,8 +243,8 @@ export function BeforeAfterSlider({ beforePhoto, afterPhoto, firstPhoto }: Befor
 
           <View style={[styles.labelLeft, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
             <Text style={styles.labelText}>Today</Text>
-            {afterPhoto!.weight && (
-              <Text style={styles.labelDay}>{afterPhoto!.weight} kg</Text>
+            {afterPhoto?.weight && (
+              <Text style={styles.labelDay}>{afterPhoto.weight} kg</Text>
             )}
           </View>
         </View>
@@ -211,13 +254,13 @@ export function BeforeAfterSlider({ beforePhoto, afterPhoto, firstPhoto }: Befor
           <View style={styles.sliderContainer}>
             {/* After Image (full, behind) */}
             <Image
-              source={{ uri: afterPhoto!.imageUrl }}
+              source={{ uri: afterPhoto?.imageUrl || '' }}
               style={styles.fullImage}
               resizeMode="cover"
             />
 
             {/* After label */}
-            <View style={[styles.labelRight, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
+            <View style={[styles.labelRight, { backgroundColor: 'rgba(0,0,0,0.5)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }]}>
               <Text style={styles.labelText}>After</Text>
               <Text style={styles.labelDay}>Day {afterDay}</Text>
             </View>
@@ -225,12 +268,16 @@ export function BeforeAfterSlider({ beforePhoto, afterPhoto, firstPhoto }: Befor
             {/* Before Image (clipped) */}
             <Animated.View style={[styles.clippedContainer, clipStyle]}>
               <Image
-                source={{ uri: beforePhoto!.imageUrl }}
+                source={{ uri: beforePhoto?.imageUrl || '' }}
                 style={[styles.fullImage, { width: SLIDER_WIDTH }]}
                 resizeMode="cover"
               />
               {/* Before label */}
-              <View style={[styles.labelLeft, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
+              <View style={[
+                styles.labelLeft, 
+                { backgroundColor: 'rgba(0,0,0,0.5)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+                renderMode === 'ghost' && { opacity: 0 } // Hide during ghost scrub for clarity
+              ]}>
                 <Text style={styles.labelText}>Before</Text>
                 <Text style={styles.labelDay}>Day {beforeDay}</Text>
               </View>
@@ -282,15 +329,15 @@ export function BeforeAfterSlider({ beforePhoto, afterPhoto, firstPhoto }: Befor
           </View>
 
           {/* Weight change */}
-          {beforePhoto!.weight && afterPhoto!.weight && (
+          {beforePhoto?.weight && afterPhoto?.weight && (
             <View style={styles.weightChangeRow}>
               <Text style={[styles.weightLabel, { color: colors.textMuted }]}>Weight Change</Text>
               <Text style={[
                 styles.weightValue,
-                { color: (afterPhoto!.weight - beforePhoto!.weight) <= 0 ? colors.accent : colors.danger }
+                { color: (afterPhoto.weight - beforePhoto.weight) <= 0 ? colors.accent : colors.danger }
               ]}>
-                {(afterPhoto!.weight - beforePhoto!.weight) > 0 ? '+' : ''}
-                {(afterPhoto!.weight - beforePhoto!.weight).toFixed(1)} kg
+                {(afterPhoto.weight - beforePhoto.weight) > 0 ? '+' : ''}
+                {(afterPhoto.weight - beforePhoto.weight).toFixed(1)} kg
               </Text>
             </View>
           )}
@@ -438,6 +485,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 12,
     zIndex: 5,
+    width: 80, // Fixed width to prevent wrapping
   },
   labelRight: {
     position: 'absolute',
@@ -447,6 +495,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 12,
     zIndex: 1,
+    width: 80, // Fixed width to prevent wrapping
   },
   labelText: {
     fontSize: 12,
@@ -498,6 +547,24 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   weightChangeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modeToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 6,
+  },
+  modeToggleText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  weightChangeRowInner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',

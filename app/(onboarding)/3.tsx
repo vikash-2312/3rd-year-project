@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button } from '../../components/Button';
+import { useUser } from '@clerk/expo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Activity01Icon, Dumbbell01Icon, ChampionIcon } from '@hugeicons/core-free-icons';
@@ -9,11 +10,12 @@ import * as Haptics from 'expo-haptics';
 
 export default function Step3Activity() {
   const router = useRouter();
+  const { user } = useUser();
   const [selectedActivity, setSelectedActivity] = useState<string | null>(null);
 
   const handleNext = async () => {
-    if (selectedActivity) {
-      await AsyncStorage.setItem('onboarding_activity', selectedActivity);
+    if (selectedActivity && user?.id) {
+      await AsyncStorage.setItem(`onboarding_activity_${user.id}`, selectedActivity);
       router.push('/(onboarding)/4');
     }
   };
@@ -53,7 +55,7 @@ export default function Step3Activity() {
       <Button 
         title="Continue" 
         onPress={handleNext} 
-        disabled={!selectedActivity}
+        disabled={!selectedActivity || !user?.id}
         style={styles.button}
       />
     </View>

@@ -1,7 +1,13 @@
 import { BeefIcon, Bread01Icon, AvocadoIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Dimensions, StyleSheet, Text, View } from 'react-native';
+import Reanimated, { 
+  useAnimatedStyle, 
+  useSharedValue, 
+  withSpring, 
+  withDelay 
+} from 'react-native-reanimated';
 import { useTheme } from '../lib/ThemeContext';
 import { SegmentedHalfCircleProgress30 } from './Halfprogress';
 
@@ -18,11 +24,29 @@ type CaloriesCardProps = {
   targetWaterLiters: number;
 };
 
-export const CaloriesCard = ({
+export const CaloriesCard = React.memo(({
   targetCalories, targetProtein, targetCarbs, targetFats, targetWaterLiters,
   remaining, progress, protein, carbs, fats
 }: CaloriesCardProps) => {
   const { colors, isDark } = useTheme();
+
+  const AnimatedMacro = ({ children, index }: { children: React.ReactNode, index: number }) => {
+    const scale = useSharedValue(0.8);
+    const opacity = useSharedValue(0);
+
+    useEffect(() => {
+      scale.value = withDelay(400 + index * 100, withSpring(1));
+      opacity.value = withDelay(400 + index * 100, withSpring(1));
+    }, []);
+
+    const style = useAnimatedStyle(() => ({
+      transform: [{ scale: scale.value }],
+      opacity: opacity.value,
+      flex: 1,
+    }));
+
+    return <Reanimated.View style={style}>{children}</Reanimated.View>;
+  };
 
   return (
     <View style={[styles.cardContainer, { backgroundColor: colors.card }]}>
@@ -45,33 +69,39 @@ export const CaloriesCard = ({
       </View>
 
       <View style={styles.macroRow}>
-        <View style={[styles.macroBlock, { backgroundColor: isDark ? '#3B1A1A' : '#FFF5F5' }]}>
-          <HugeiconsIcon icon={BeefIcon} size={20} color={isDark ? '#FC8181' : '#E53E3E'} />
-          <View style={styles.macroTextContainer}>
-            <Text style={[styles.macroValue, { color: isDark ? '#FC8181' : '#E53E3E' }]}>{protein}g</Text>
-            <Text style={[styles.macroLabel, { color: colors.textTertiary }]}>Protein</Text>
+        <AnimatedMacro index={0}>
+          <View style={[styles.macroBlock, { backgroundColor: isDark ? '#3B1A1A' : '#FFF5F5' }]}>
+            <HugeiconsIcon icon={BeefIcon} size={20} color={isDark ? '#FC8181' : '#E53E3E'} />
+            <View style={styles.macroTextContainer}>
+              <Text style={[styles.macroValue, { color: isDark ? '#FC8181' : '#E53E3E' }]}>{protein}g</Text>
+              <Text style={[styles.macroLabel, { color: colors.textTertiary }]}>Protein</Text>
+            </View>
           </View>
-        </View>
+        </AnimatedMacro>
 
-        <View style={[styles.macroBlock, { backgroundColor: isDark ? '#3B2A1A' : '#FFFBEB' }]}>
-          <HugeiconsIcon icon={Bread01Icon} size={20} color={isDark ? '#FBD38D' : '#DD6B20'} />
-          <View style={styles.macroTextContainer}>
-            <Text style={[styles.macroValue, { color: isDark ? '#FBD38D' : '#DD6B20' }]}>{carbs}g</Text>
-            <Text style={[styles.macroLabel, { color: colors.textTertiary }]}>Carbs</Text>
+        <AnimatedMacro index={1}>
+          <View style={[styles.macroBlock, { backgroundColor: isDark ? '#3B2A1A' : '#FFFBEB' }]}>
+            <HugeiconsIcon icon={Bread01Icon} size={20} color={isDark ? '#FBD38D' : '#DD6B20'} />
+            <View style={styles.macroTextContainer}>
+              <Text style={[styles.macroValue, { color: isDark ? '#FBD38D' : '#DD6B20' }]}>{carbs}g</Text>
+              <Text style={[styles.macroLabel, { color: colors.textTertiary }]}>Carbs</Text>
+            </View>
           </View>
-        </View>
+        </AnimatedMacro>
 
-        <View style={[styles.macroBlock, { backgroundColor: isDark ? '#1A3B35' : '#E6FFFA' }]}>
-          <HugeiconsIcon icon={AvocadoIcon} size={20} color={isDark ? '#4FD1C5' : '#38B2AC'} />
-          <View style={styles.macroTextContainer}>
-            <Text style={[styles.macroValue, { color: isDark ? '#4FD1C5' : '#38B2AC' }]}>{fats}g</Text>
-            <Text style={[styles.macroLabel, { color: colors.textTertiary }]}>Fats</Text>
+        <AnimatedMacro index={2}>
+          <View style={[styles.macroBlock, { backgroundColor: isDark ? '#1A3B35' : '#E6FFFA' }]}>
+            <HugeiconsIcon icon={AvocadoIcon} size={20} color={isDark ? '#4FD1C5' : '#38B2AC'} />
+            <View style={styles.macroTextContainer}>
+              <Text style={[styles.macroValue, { color: isDark ? '#4FD1C5' : '#38B2AC' }]}>{fats}g</Text>
+              <Text style={[styles.macroLabel, { color: colors.textTertiary }]}>Fats</Text>
+            </View>
           </View>
-        </View>
+        </AnimatedMacro>
       </View>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   cardContainer: {

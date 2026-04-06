@@ -1,28 +1,64 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Dimensions, Image, StyleSheet, Text, View } from 'react-native';
+import Reanimated, { 
+  useAnimatedStyle, 
+  useSharedValue, 
+  withDelay, 
+  withSpring 
+} from 'react-native-reanimated';
 import { useTheme } from '../lib/ThemeContext';
+import { HugeiconsIcon } from '@hugeicons/react-native';
+import { Add01Icon } from '@hugeicons/core-free-icons';
+import { TouchableOpacity } from 'react-native';
 
 type WaterCardProps = {
   targetLiters: number;
   consumedLiters: number;
+  onQuickLog?: (liters: number) => void;
 };
 
-export function WaterCard({ targetLiters, consumedLiters }: WaterCardProps) {
+const GLASS_VOLUME_L = 0.25;
+
+const AnimatedGlass = ({ index, source, opacity, totalConsumedGlasses }: { index: number, source: any, opacity: boolean, totalConsumedGlasses: number }) => {
+  const scale = useSharedValue(0.5);
+  const glassOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    scale.value = withDelay(index * 50, withSpring(1));
+    glassOpacity.value = withDelay(index * 50, withSpring(opacity ? 0.1 : 1));
+  }, [totalConsumedGlasses, opacity]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: glassOpacity.value,
+  }));
+
+  return (
+    <Reanimated.View style={animatedStyle}>
+      <Image 
+        source={source} 
+        style={[styles.glassIcon, opacity && styles.emptyGlass]} 
+        resizeMode="contain"
+      />
+    </Reanimated.View>
+  );
+};
+
+export const WaterCard = React.memo(({ targetLiters, consumedLiters, onQuickLog }: WaterCardProps) => {
   const { colors } = useTheme();
-  const GLASS_VOLUME_L = 0.25;
-  const MAX_GLASSES = 9;
   
   const totalTargetGlasses = Math.ceil(targetLiters / GLASS_VOLUME_L);
   const totalConsumedGlasses = consumedLiters / GLASS_VOLUME_L;
-  const displayGlasses = Math.min(totalTargetGlasses, MAX_GLASSES);
   const remainingCalculated = Math.max(0, totalTargetGlasses - totalConsumedGlasses);
+  const percentage = Math.min(100, Math.round((consumedLiters / targetLiters) * 100));
 
   const renderGlasses = () => {
     const glasses = [];
-    for (let i = 0; i < displayGlasses; i++) {
+    for (let i = 0; i < totalTargetGlasses; i++) {
       let src;
       let isOpacity = false;
       const glassValue = i + 1;
+      
       if (totalConsumedGlasses >= glassValue) {
         src = require('../assets/images/full_glass.png');
       } else if (totalConsumedGlasses >= glassValue - 0.5) {
@@ -31,12 +67,14 @@ export function WaterCard({ targetLiters, consumedLiters }: WaterCardProps) {
         src = require('../assets/images/full_glass.png');
         isOpacity = true;
       }
+
       glasses.push(
-        <Image 
+        <AnimatedGlass 
           key={i} 
+          index={i}
           source={src} 
-          style={[styles.glassIcon, isOpacity && styles.emptyGlass]} 
-          resizeMode="contain"
+          opacity={isOpacity}
+          totalConsumedGlasses={totalConsumedGlasses}
         />
       );
     }
@@ -52,6 +90,9 @@ export function WaterCard({ targetLiters, consumedLiters }: WaterCardProps) {
             {Math.round(consumedLiters * 1000)}ml / {Math.round(targetLiters * 1000)}ml
           </Text>
         </View>
+        <View style={[styles.percentageBadge, { backgroundColor: colors.blue + '10' }]}>
+           <Text style={[styles.percentageText, { color: colors.blue }]}>{percentage}%</Text>
+        </View>
       </View>
 
       <View style={styles.glassesRow}>
@@ -59,20 +100,42 @@ export function WaterCard({ targetLiters, consumedLiters }: WaterCardProps) {
       </View>
 
       <View style={[styles.footerRow, { borderTopColor: colors.border }]}>
-        <Text style={[styles.remainingText, { color: colors.textTertiary }]}>
-          {remainingCalculated <= 0 ? (
-            <Text style={[styles.goalReachedText, { color: colors.accent }]}>Goal reached! 🎉</Text>
-          ) : (
-            `${remainingCalculated} ${remainingCalculated === 1 ? 'glass' : 'glasses'} left`
-          )}
-        </Text>
+        <View style={styles.remainingWrapper}>
+           <Text style={[styles.remainingText, { color: colors.textTertiary }]}>
+            {remainingCalculated <= 0 ? (
+              <Text style={[styles.goalReachedText, { color: colors.accent }]}>Goal reached! 🎉</Text>
+            ) : (
+              `${remainingCalculated} ${remainingCalculated === 1 ? 'glass' : 'glasses'} left`
+            )}
+          </Text>
+        </View>
+
+        <View style={styles.quickLogActions}>
+          <TouchableOpacity 
+            style={[styles.quickButton, { backgroundColor: colors.blue + '15' }]} 
+            onPress={() => onQuickLog?.(0.25)}
+            activeOpacity={0.7}
+          >
+             <HugeiconsIcon icon={Add01Icon} size={14} color={colors.blue} />
+             <Text style={[styles.quickButtonText, { color: colors.blue }]}>250ml</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.quickButton, { backgroundColor: colors.blue + '15' }]} 
+            onPress={() => onQuickLog?.(0.5)}
+            activeOpacity={0.7}
+          >
+             <HugeiconsIcon icon={Add01Icon} size={14} color={colors.blue} />
+             <Text style={[styles.quickButtonText, { color: colors.blue }]}>500ml</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
-}
+});
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const GLASS_SIZE = (SCREEN_WIDTH - 48 - 40 - 64) / 9; // screen - card margin - card padding - gaps
+const GLASS_SIZE = (SCREEN_WIDTH - 48 - 40 - 56) / 8; // Adjust for 8 per row
 
 const styles = StyleSheet.create({
   cardContainer: {
@@ -108,10 +171,19 @@ const styles = StyleSheet.create({
     color: '#718096',
     marginLeft: 8,
   },
+  percentageBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  percentageText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
   glassesRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    flexWrap: 'wrap',
+    gap: 8,
     marginBottom: 16,
   },
   glassIcon: {
@@ -123,10 +195,15 @@ const styles = StyleSheet.create({
     tintColor: '#D1D5DB', 
   },
   footerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 8,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#F7FAFC'
+  },
+  remainingWrapper: {
+    flex: 1,
   },
   remainingText: {
     fontSize: 14,
@@ -136,6 +213,21 @@ const styles = StyleSheet.create({
   goalReachedText: {
     color: '#009050',
     fontWeight: '700',
+  },
+  quickLogActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  quickButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 4,
+  },
+  quickButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
   }
 });
-

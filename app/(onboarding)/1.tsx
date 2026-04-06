@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button } from '../../components/Button';
+import { useUser } from '@clerk/expo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { AiUserIcon, GlobalIcon, UserIcon } from '@hugeicons/core-free-icons';
@@ -9,11 +10,12 @@ import * as Haptics from 'expo-haptics';
 
 export default function Step1Gender() {
   const router = useRouter();
+  const { user } = useUser();
   const [selectedGender, setSelectedGender] = useState<string | null>(null);
 
   const handleNext = async () => {
-    if (selectedGender) {
-      await AsyncStorage.setItem('onboarding_gender', selectedGender);
+    if (selectedGender && user?.id) {
+      await AsyncStorage.setItem(`onboarding_gender_${user.id}`, selectedGender);
       router.push('/(onboarding)/2');
     }
   };
@@ -53,7 +55,7 @@ export default function Step1Gender() {
       <Button 
         title="Continue" 
         onPress={handleNext} 
-        disabled={!selectedGender}
+        disabled={!selectedGender || !user?.id}
         style={styles.button}
       />
     </View>

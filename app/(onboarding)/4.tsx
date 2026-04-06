@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button } from '../../components/Button';
+import { useUser } from '@clerk/expo';
 import { InputField } from '../../components/InputField';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function Step4Birthdate() {
   const router = useRouter();
+  const { user } = useUser();
   const [day, setDay] = useState('');
   const [month, setMonth] = useState('');
   const [year, setYear] = useState('');
@@ -14,9 +16,9 @@ export default function Step4Birthdate() {
   const isValidDate = day.length > 0 && month.length > 0 && year.length === 4;
 
   const handleNext = async () => {
-    if (isValidDate) {
+    if (isValidDate && user?.id) {
       const birthdate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-      await AsyncStorage.setItem('onboarding_birthdate', birthdate);
+      await AsyncStorage.setItem(`onboarding_birthdate_${user.id}`, birthdate);
       router.push('/(onboarding)/5');
     }
   };
@@ -77,7 +79,7 @@ export default function Step4Birthdate() {
           <Button 
             title="Continue" 
             onPress={handleNext} 
-            disabled={!isValidDate}
+            disabled={!isValidDate || !user?.id}
             style={styles.button}
           />
         </View>

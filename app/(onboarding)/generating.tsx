@@ -9,6 +9,11 @@ import { addDoc, collection, doc, serverTimestamp, setDoc } from 'firebase/fires
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 import { db } from '../../lib/firebase';
+import { 
+  scheduleDailyReminders, 
+  seedAdminSettings, 
+  seedWelcomeNotification 
+} from '../../lib/notifications';
 import { calculateUserPlan } from '../../services/macroEngine';
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
@@ -65,14 +70,14 @@ export default function GeneratingProfile() {
       if (!user) return;
 
       try {
-        // 1. Gather all data from AsyncStorage
-        const gender = await AsyncStorage.getItem('onboarding_gender') || 'male';
-        const goal = await AsyncStorage.getItem('onboarding_goal') || 'maintain';
-        const activity = await AsyncStorage.getItem('onboarding_activity') || 'moderate';
-        const birthdate = await AsyncStorage.getItem('onboarding_birthdate') || '2000-01-01';
-        const weight = await AsyncStorage.getItem('onboarding_weight') || '70';
-        const heightCm = await AsyncStorage.getItem('onboarding_height_cm') || '170';
-        const diet = await AsyncStorage.getItem('onboarding_diet') || 'non-vegetarian';
+        // 1. Gather all data from AsyncStorage (Identity-Locked)
+        const gender = await AsyncStorage.getItem(`onboarding_gender_${user.id}`) || 'male';
+        const goal = await AsyncStorage.getItem(`onboarding_goal_${user.id}`) || 'maintain';
+        const activity = await AsyncStorage.getItem(`onboarding_activity_${user.id}`) || 'moderate';
+        const birthdate = await AsyncStorage.getItem(`onboarding_birthdate_${user.id}`) || '2000-01-01';
+        const weight = await AsyncStorage.getItem(`onboarding_weight_${user.id}`) || '70';
+        const heightCm = await AsyncStorage.getItem(`onboarding_height_cm_${user.id}`) || '170';
+        const diet = await AsyncStorage.getItem(`onboarding_diet_${user.id}`) || 'non-vegetarian';
 
         // 2. CORE DETERMINISTIC CALCULATION (REPLACES AI MACRO GEN)
         const macroPlan = calculateUserPlan({
@@ -148,10 +153,13 @@ export default function GeneratingProfile() {
           timestamp: serverTimestamp()
         });
 
-        // 6. Store for Preview Screen
-        await AsyncStorage.setItem('onboarding_result_calories', finalData.dailyCalories.toString());
-        await AsyncStorage.setItem('onboarding_result_protein', finalData.proteinGrams.toString());
+        // 6. Store for Preview Screen (Identity-Locked)
+        await AsyncStorage.setItem(`onboarding_result_calories_${user.id}`, finalData.dailyCalories.toString());
+        await AsyncStorage.setItem(`onboarding_result_protein_${user.id}`, finalData.proteinGrams.toString());
         await AsyncStorage.setItem(`has_onboarded_${user.id}`, 'true');
+        
+        // 7. Seed Welcome Notification (New User only)
+        await seedWelcomeNotification(user.id);
 
         if (isMountedRef.current) setAiCompleted(true);
 

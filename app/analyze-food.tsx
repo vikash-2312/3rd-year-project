@@ -3,9 +3,15 @@ import { HugeiconsIcon } from '@hugeicons/react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, StyleSheet, Text, TouchableOpacity, View, Modal, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../components/Button';
+import { FoodScanStoryTemplate } from '../components/progress/FoodScanStoryTemplate';
+import ViewShot from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+import * as Haptics from 'expo-haptics';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 
@@ -15,6 +21,9 @@ export default function AnalyzeFoodScreen() {
 
   const [step, setStep] = useState(0);
   const [aiResult, setAiResult] = useState<any>(null);
+  const [isPreviewVisible, setIsPreviewVisible] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const storyViewShotRef = React.useRef<ViewShot>(null);
 
   const steps = [
     "Analyzing food...",
@@ -143,6 +152,37 @@ Return ONLY valid JSON:
     return () => { isMounted = false; };
   }, [imageUri]);
 
+  const handleShareAnalysis = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsPreviewVisible(true);
+  };
+
+  const performFinalShare = async () => {
+    setIsSharing(true);
+    setIsPreviewVisible(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+    setTimeout(async () => {
+      try {
+        if (storyViewShotRef.current?.capture) {
+          const uri = await storyViewShotRef.current.capture();
+          const isAvailable = await Sharing.isAvailableAsync();
+          if (isAvailable) {
+            await Sharing.shareAsync(uri, {
+              mimeType: 'image/jpeg',
+              dialogTitle: 'AI Food Analysis',
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Sharing Error:', err);
+        Alert.alert('Share Failed', 'Unable to generate your AI scan story.');
+      } finally {
+        setIsSharing(false);
+      }
+    }, 1000);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -200,11 +240,19 @@ Return ONLY valid JSON:
 
         {/* Footer */}
         <View style={styles.footer}>
+          {step === 3 && (
+            <TouchableOpacity 
+              style={styles.shareAnalysisButton}
+              onPress={handleShareAnalysis}
+            >
+              <Text style={styles.shareAnalysisText}>📤 Preview & Share AI Scan</Text>
+            </TouchableOpacity>
+          )}
+
           <Button
-            title="Continue"
+            title="Continue & Log Food"
             onPress={() => {
               if (aiResult) {
-                // Navigate to log-food with pre-filled AI data
                 router.replace({
                   pathname: '/log-food',
                   params: {
@@ -220,6 +268,87 @@ Return ONLY valid JSON:
             disabled={step < 3}
             style={styles.continueButton}
           />
+        </View>
+
+        {/* Share Preview Modal */}
+        <Modal
+          visible={isPreviewVisible}
+          transparent={true}
+          animationType="fade"
+        >
+          <View style={styles.previewModalOverlay}>
+            <View style={styles.previewContent}>
+              <View style={styles.previewHeader}>
+                <Text style={styles.previewHeaderTitle}>AI Scan Reveal</Text>
+                <TouchableOpacity onPress={() => setIsPreviewVisible(false)}>
+                   <Text style={styles.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.previewTemplateContainer}>
+                <View 
+                  style={{ 
+                    width: 1080, 
+                    height: 1920, 
+                    transform: [
+                      { scale: (SCREEN_WIDTH * 0.75) / 1080 },
+                    ],
+                    overflow: 'hidden',
+                    borderRadius: 40,
+                  }}
+                >
+                  {aiResult && imageUri && (
+                    <FoodScanStoryTemplate
+                      imageUri={decodeURIComponent(imageUri)}
+                      foodName={aiResult.foodName}
+                      calories={aiResult.calories}
+                      protein={aiResult.protein}
+                      carbs={aiResult.carbs}
+                      fat={aiResult.fat}
+                    />
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.previewFooter}>
+                <Text style={styles.previewHint}>Share the AI magic with your friends! 🍱🤖</Text>
+                <TouchableOpacity
+                  style={styles.confirmShareButton}
+                  onPress={performFinalShare}
+                >
+                  <Text style={styles.confirmShareButtonText}>📤 Confirm & Share Story</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Global Sharing Overlay */}
+        {isSharing && (
+          <View style={[StyleSheet.absoluteFill, styles.shareModalOverlay]}>
+            <ActivityIndicator size="large" color="#22D3EE" />
+            <Text style={styles.sharingText}>REVEALING AI DATA...</Text>
+          </View>
+        )}
+
+        {/* Hidden high-res capture view */}
+        <View style={styles.hiddenViewShot}>
+          {aiResult && imageUri && (
+             <ViewShot
+              ref={storyViewShotRef}
+              options={{ format: 'jpg', quality: 0.9 }}
+              style={{ width: 1080, height: 1920 }}
+            >
+              <FoodScanStoryTemplate
+                imageUri={decodeURIComponent(imageUri)}
+                foodName={aiResult.foodName}
+                calories={aiResult.calories}
+                protein={aiResult.protein}
+                carbs={aiResult.carbs}
+                fat={aiResult.fat}
+              />
+            </ViewShot>
+          )}
         </View>
       </View>
     </SafeAreaView>
@@ -328,5 +457,109 @@ const styles = StyleSheet.create({
   },
   continueButton: {
     width: '100%',
-  }
+  },
+  shareAnalysisButton: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#3182CE',
+    borderStyle: 'dashed',
+    backgroundColor: '#EBF8FF',
+  },
+  shareAnalysisText: {
+    color: '#3182CE',
+    fontWeight: '800',
+    fontSize: 15,
+  },
+  // Preview Modal Styles
+  previewModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewContent: {
+    width: '90%',
+    maxHeight: '90%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 32,
+    overflow: 'hidden',
+    padding: 24,
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  previewHeaderTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#2D3748',
+  },
+  cancelText: {
+    color: '#A0AEC0',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  previewTemplateContainer: {
+    height: (SCREEN_WIDTH * 0.75 * 1920) / 1080,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000',
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  previewFooter: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  previewHint: {
+    color: '#718096',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  confirmShareButton: {
+    width: '100%',
+    backgroundColor: '#22D3EE',
+    paddingVertical: 16,
+    borderRadius: 18,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  confirmShareButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  shareModalOverlay: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  sharingText: {
+    color: '#1A202C',
+    marginTop: 16,
+    fontWeight: '900',
+    letterSpacing: 2,
+    fontSize: 14,
+  },
+  hiddenViewShot: {
+    position: 'absolute',
+    left: -5000,
+    top: 0,
+    opacity: 0,
+  },
 });

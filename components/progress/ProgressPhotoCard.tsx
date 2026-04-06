@@ -1,25 +1,46 @@
 import React from 'react';
-import { View, Image, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { View, Image, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import Animated, { 
+  FadeIn,
+  useSharedValue, 
+  useAnimatedStyle, 
+  withSpring
+} from 'react-native-reanimated';
 import { useTheme } from '../../lib/ThemeContext';
 import { ProgressPhoto, getTimeLabel, getDayNumber } from '../../services/progressPhotoService';
+import { format, parseISO } from 'date-fns';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface ProgressPhotoCardProps {
   photo: ProgressPhoto;
   firstPhoto: ProgressPhoto;
-  previousPhoto?: ProgressPhoto; // For weight change badge
+  previousPhoto?: ProgressPhoto;
   onPress: (photo: ProgressPhoto) => void;
   onLongPress: (photo: ProgressPhoto) => void;
   index: number;
+  isSelected?: boolean;
+  selectionIndex?: number;
 }
 
-export function ProgressPhotoCard({ photo, firstPhoto, previousPhoto, onPress, onLongPress, index }: ProgressPhotoCardProps) {
+export function ProgressPhotoCard({ 
+  photo, 
+  firstPhoto, 
+  previousPhoto, 
+  onPress, 
+  onLongPress, 
+  index,
+  isSelected,
+  selectionIndex
+}: ProgressPhotoCardProps) {
   const { colors, isDark } = useTheme();
   const scale = useSharedValue(1);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: scale.value }]
+    };
+  });
 
   const handlePressIn = () => {
     scale.value = withSpring(0.93, { damping: 15, stiffness: 200 });
@@ -29,18 +50,17 @@ export function ProgressPhotoCard({ photo, firstPhoto, previousPhoto, onPress, o
     scale.value = withSpring(1, { damping: 15, stiffness: 200 });
   };
 
-  const dayNum = getDayNumber(photo, firstPhoto);
-  const timeLabel = getTimeLabel(photo, firstPhoto);
-
-  // Weight change from previous photo
   const weightChange = previousPhoto?.weight && photo.weight
     ? photo.weight - previousPhoto.weight
     : null;
 
+  // Grid sizing: 3 columns, minus padding
+  // Container padding is 24px total (left + right in analytics or timeline container)
+  // And we want space between items. Let's use flex styling or calculated width
+  const cardWidth = Math.floor((SCREEN_WIDTH - 48 - 16) / 3); // 48 padding, 16 gap total for margins
+
   return (
-    <Animated.View
-      entering={FadeIn.delay(index * 80).duration(400)}
-    >
+    <Animated.View style={[animatedStyle, { width: cardWidth, marginBottom: 8 }]}>
       <TouchableOpacity
         activeOpacity={0.9}
         onPress={() => onPress(photo)}
@@ -49,16 +69,28 @@ export function ProgressPhotoCard({ photo, firstPhoto, previousPhoto, onPress, o
         onPressOut={handlePressOut}
         delayLongPress={400}
       >
-        <Animated.View style={[styles.card, { backgroundColor: colors.card }, animatedStyle]}>
+        <View style={[
+          styles.card, 
+          { backgroundColor: colors.card }, 
+          { 
+            borderColor: isSelected ? colors.accent : 'transparent', 
+            borderWidth: isSelected ? 2.5 : 0 
+          }
+        ]}>
           <View style={styles.imageContainer}>
-            <Image source={{ uri: photo.imageUrl }} style={styles.image} resizeMode="cover" />
+            {/* Aspect ratio 3:4 for vertical portraits */}
+            <Image source={{ uri: photo.imageUrl }} style={[styles.image, { height: cardWidth * 1.33 }]} resizeMode="cover" />
             
-            {/* Day badge */}
-            <View style={[styles.dayBadge, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
-              <Text style={styles.dayBadgeText}>Day {dayNum}</Text>
+            <View style={[styles.dateBadge, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
+              <Text style={styles.dateBadgeText}>{format(parseISO(photo.date), 'MMM d')}</Text>
             </View>
 
-            {/* Weight change badge */}
+            {isSelected && (
+              <View style={[styles.selectionBadge, { backgroundColor: colors.accent }]}>
+                <Text style={styles.selectionBadgeText}>{selectionIndex !== undefined ? selectionIndex + 1 : ''}</Text>
+              </View>
+            )}
+            
             {weightChange !== null && weightChange !== 0 && (
               <View style={[
                 styles.weightChangeBadge,
@@ -71,18 +103,13 @@ export function ProgressPhotoCard({ photo, firstPhoto, previousPhoto, onPress, o
             )}
           </View>
 
-          {/* Info row */}
+          {/* Minimal Info row for Grid */}
           <View style={styles.infoRow}>
-            <Text style={[styles.timeLabel, { color: colors.textSecondary }]} numberOfLines={1}>
-              {timeLabel}
-            </Text>
-            {photo.weight && (
-              <Text style={[styles.weightText, { color: colors.textMuted }]}>
-                {photo.weight}kg
+             <Text style={[styles.weightText, { color: colors.text }]} numberOfLines={1}>
+                {photo.weight ? `${photo.weight} kg` : '--'}
               </Text>
-            )}
           </View>
-        </Animated.View>
+        </View>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -90,67 +117,81 @@ export function ProgressPhotoCard({ photo, firstPhoto, previousPhoto, onPress, o
 
 const styles = StyleSheet.create({
   card: {
-    width: 130,
-    borderRadius: 18,
+    borderRadius: 14,
     overflow: 'hidden',
-    marginRight: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+    borderWidth: 0, // Fallback if isSelected is false
   },
   imageContainer: {
     position: 'relative',
+    width: '100%',
   },
   image: {
-    width: 130,
-    height: 160,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    width: '100%',
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
   },
-  dayBadge: {
+  dateBadge: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  dayBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.3,
-  },
-  weightChangeBadge: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    paddingHorizontal: 7,
+    bottom: 6,
+    left: 6,
+    paddingHorizontal: 6,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 6,
   },
-  weightChangeBadgeText: {
+  dateBadgeText: {
     fontSize: 9,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.2,
   },
-  infoRow: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  weightChangeBadge: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
-  timeLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    flex: 1,
+  weightChangeBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  infoRow: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   weightText: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  selectionBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  selectionBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#FFFFFF',
   },
 });

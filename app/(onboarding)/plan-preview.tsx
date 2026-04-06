@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button } from '../../components/Button';
+import { useUser } from '@clerk/expo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { FireIcon, Dumbbell01Icon, Activity01Icon } from '@hugeicons/core-free-icons';
@@ -9,6 +10,7 @@ import * as Haptics from 'expo-haptics';
 
 export default function PlanPreview() {
   const router = useRouter();
+  const { user } = useUser();
   const [calories, setCalories] = useState('0');
   const [protein, setProtein] = useState('0');
   const [goal, setGoal] = useState('');
@@ -18,9 +20,11 @@ export default function PlanPreview() {
 
   useEffect(() => {
     const loadData = async () => {
-      const cals = await AsyncStorage.getItem('onboarding_result_calories');
-      const prot = await AsyncStorage.getItem('onboarding_result_protein');
-      const g = await AsyncStorage.getItem('onboarding_goal');
+      if (!user?.id) return;
+
+      const cals = await AsyncStorage.getItem(`onboarding_result_calories_${user.id}`);
+      const prot = await AsyncStorage.getItem(`onboarding_result_protein_${user.id}`);
+      const g = await AsyncStorage.getItem(`onboarding_goal_${user.id}`);
       
       setCalories(cals || '0');
       setProtein(prot || '0');

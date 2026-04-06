@@ -1,39 +1,72 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, TouchableOpacityProps } from 'react-native';
+import { 
+  TouchableOpacity, 
+  Text, 
+  StyleSheet, 
+  ActivityIndicator, 
+  TouchableOpacityProps, 
+  View, 
+  Image, 
+  ImageSourcePropType 
+} from 'react-native';
 
 interface ButtonProps extends TouchableOpacityProps {
   title: string;
   loading?: boolean;
   variant?: 'primary' | 'secondary' | 'outline';
+  leftIcon?: React.ReactNode;
+  imageSource?: ImageSourcePropType;
+  textStyle?: any;
 }
 
-export const Button = ({ title, loading, variant = 'primary', style, ...props }: ButtonProps) => {
+export const Button = ({ 
+  title, 
+  loading, 
+  variant = 'primary', 
+  leftIcon, 
+  imageSource,
+  style, 
+  textStyle,
+  ...props 
+}: ButtonProps) => {
+  const isOutline = variant === 'outline';
+  
   return (
     <TouchableOpacity
       style={[
         styles.button,
         variant === 'primary' && styles.primary,
         variant === 'secondary' && styles.secondary,
-        variant === 'outline' && styles.outline,
+        isOutline && styles.outline,
         style,
-        props.disabled && styles.disabled
+        (props.disabled || loading) && styles.disabled
       ]}
-      activeOpacity={0.8}
+      activeOpacity={0.7}
+      disabled={props.disabled || loading}
       {...props}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'outline' ? '#FF6B6B' : '#FFF'} />
+        <ActivityIndicator color={isOutline ? '#FF6B6B' : '#FFF'} />
       ) : (
-        <Text
-          style={[
-            styles.text,
-            variant === 'primary' && styles.textLight,
-            variant === 'secondary' && styles.textLight,
-            variant === 'outline' && styles.textPrimary
-          ]}
-        >
-          {title}
-        </Text>
+        <View style={styles.contentContainer}>
+          {imageSource && (
+            <Image source={imageSource} style={styles.imageIcon} />
+          )}
+          {leftIcon && (
+            <View style={styles.iconContainer}>{leftIcon}</View>
+          )}
+          <Text
+            style={[
+              styles.text,
+              variant === 'primary' && styles.textLight,
+              variant === 'secondary' && styles.textLight,
+              isOutline && styles.textPrimary,
+              textStyle
+            ]}
+          >
+            {title}
+          </Text>
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -83,5 +116,19 @@ const styles = StyleSheet.create({
   },
   textPrimary: {
     color: '#FF6B6B',
+  },
+  contentContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconContainer: {
+    marginRight: 10,
+  },
+  imageIcon: {
+    width: 20,
+    height: 20,
+    marginRight: 12,
+    resizeMode: 'contain',
   },
 });

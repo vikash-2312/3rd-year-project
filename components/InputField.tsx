@@ -1,32 +1,42 @@
 import React, { useState } from 'react';
 import { View, TextInput, StyleSheet, TextInputProps, TouchableOpacity, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { HugeiconsIcon } from '@hugeicons/react-native';
+import { 
+  ViewIcon, 
+  ViewOffSlashIcon,
+  Mail01Icon,
+  LockPasswordIcon,
+  Key01Icon,
+  UserIcon
+} from '@hugeicons/core-free-icons';
 
 interface InputFieldProps extends TextInputProps {
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: 'mail-outline' | 'lock-closed-outline' | 'keypad-outline' | 'person-outline';
   isPassword?: boolean;
 }
+
+const getIcon = (name?: string) => {
+  switch (name) {
+    case 'mail-outline': return Mail01Icon;
+    case 'lock-closed-outline': return LockPasswordIcon;
+    case 'keypad-outline': return Key01Icon;
+    case 'person-outline': return UserIcon;
+    default: return null;
+  }
+};
 
 export const InputField = ({ icon, isPassword, onFocus, onBlur, ...props }: InputFieldProps) => {
   const [isFocused, setIsFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleFocus = (e: any) => {
-    setIsFocused(true);
-    if (onFocus) onFocus(e);
-  };
-
-  const handleBlur = (e: any) => {
-    setIsFocused(false);
-    if (onBlur) onBlur(e);
-  };
+  const IconComponent = getIcon(icon);
 
   return (
     <View style={[styles.container, isFocused && styles.focusedContainer]}>
-      {icon && (
-        <Ionicons 
-          name={icon} 
-          size={20} 
+      {IconComponent && (
+        <HugeiconsIcon 
+          icon={IconComponent} 
+          size={18} 
           color={isFocused ? "#FF6B6B" : "#A0AEC0"} 
           style={styles.icon}
         />
@@ -35,18 +45,25 @@ export const InputField = ({ icon, isPassword, onFocus, onBlur, ...props }: Inpu
         style={styles.input}
         placeholderTextColor="#A0AEC0"
         secureTextEntry={isPassword && !showPassword}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
+        onFocus={(e) => {
+          setIsFocused(true);
+          onFocus?.(e);
+        }}
+        onBlur={(e) => {
+          setIsFocused(false);
+          onBlur?.(e);
+        }}
         {...props}
       />
       {isPassword && (
         <TouchableOpacity 
           onPress={() => setShowPassword(!showPassword)}
           style={styles.eyeIcon}
+          activeOpacity={0.6}
         >
-          <Ionicons 
-            name={showPassword ? "eye-off-outline" : "eye-outline"} 
-            size={20} 
+          <HugeiconsIcon 
+            icon={showPassword ? ViewOffSlashIcon : ViewIcon} 
+            size={18} 
             color="#A0AEC0" 
           />
         </TouchableOpacity>

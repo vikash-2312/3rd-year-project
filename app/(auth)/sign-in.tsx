@@ -1,17 +1,34 @@
 import { useClerk, useOAuth, useSignIn } from '@clerk/expo';
+import {
+  ArrowLeft01Icon,
+  GoogleIcon
+} from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Link, useRouter } from 'expo-router';
 import * as AuthSession from 'expo-auth-session';
+import { Link, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { authBridge } from '../../lib/auth-bridge';
-import { doc, getDocFromServer, collection, query, where, getDocs, setDoc } from 'firebase/firestore';
 import React from 'react';
-import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View
+} from 'react-native';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Button } from '../../components/Button';
 import { InputField } from '../../components/InputField';
-import { useWarmUpBrowser } from '../../hooks/useWarmUpBrowser';
 import { checkAndMigrateProfile } from '../../hooks/useAuthCheck';
-import { db } from '../../lib/firebase';
+import { useWarmUpBrowser } from '../../hooks/useWarmUpBrowser';
+import { authBridge } from '../../lib/auth-bridge';
+import { useTheme } from '../../lib/ThemeContext';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -89,12 +106,13 @@ export default function SignIn() {
   const signIn = (signInResult?.create || signInResult?.id)
     ? signInResult
     : (signInResult?.signIn?.create ? signInResult.signIn : (signInResult?.signIn || null));
-  const { startOAuthFlow } = useOAuth({ 
+  const { startOAuthFlow } = useOAuth({
     strategy: 'oauth_google',
     redirectUrl: AuthSession.makeRedirectUri()
   });
   const router = useRouter();
 
+  const { colors } = useTheme();
   const [emailAddress, setEmailAddress] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
@@ -164,9 +182,15 @@ export default function SignIn() {
     if (!signIn) return;
     setIsLoading(true);
     setError('');
-    try {
-      const trimmedEmail = emailAddress.trim().toLowerCase();
+    const trimmedEmail = emailAddress.trim().toLowerCase();
 
+    if (!trimmedEmail || !password) {
+      setError('Please enter your email and password');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
       console.log('[SignIn] Attempting sign-in for:', trimmedEmail);
 
       let result = await (signIn as any).create({
@@ -237,7 +261,7 @@ export default function SignIn() {
     try {
       // Set a flag to tell index.tsx to NOT interfere with this sign-in's routing
       await AsyncStorage.setItem('is_signing_in', 'true');
-      
+
       await setActive({ session: sessionId });
       console.log('[SignIn] Session activated successfully.');
 
@@ -372,15 +396,15 @@ export default function SignIn() {
 
   const onGoogleSignInPress = React.useCallback(async () => {
     if (isLoading) return;
-    
+
     // 🛡️ Zero-Latency Shield: Lock the gate INSTANTLY (0ms)
     authBridge.isSigningIn = true;
     setIsLoading(true);
-    
+
     try {
       // Also set persistent storage for backgrounding resilience
       await AsyncStorage.setItem('is_signing_in', 'true');
-      
+
       // Use explicit scheme for reliable native redirects
       const redirectUrl = `aicaltrack://expo-auth-session`;
       console.log('[SignIn] Starting OAuth flow with redirect:', redirectUrl);
@@ -388,12 +412,12 @@ export default function SignIn() {
       const { createdSessionId, setActive: setOAuthActive } = await startOAuthFlow({
         redirectUrl
       });
-      
+
       console.log('[SignIn] OAuth flow returned. SessionId:', createdSessionId);
 
       if (createdSessionId && setOAuthActive) {
         await setOAuthActive({ session: createdSessionId });
-        
+
         // Wait for session to stabilize
         const userId = await waitForClerkUser();
         if (userId) {
@@ -410,11 +434,11 @@ export default function SignIn() {
       console.error('OAuth error:', err);
       // 🛡️ Release shield instantly on error/cancel
       authBridge.isSigningIn = false;
-      await AsyncStorage.removeItem('is_signing_in').catch(() => {});
-      
+      await AsyncStorage.removeItem('is_signing_in').catch(() => { });
+
       // Clean up session if it's in an invalid state
       await WebBrowser.coolDownAsync();
-      
+
       const errMsg = err?.message || '';
       if (!errMsg.includes('cancel') && !errMsg.includes('dismiss')) {
         Alert.alert('Error', 'Google sign in failed. Please try again.');
@@ -433,148 +457,156 @@ export default function SignIn() {
         : `Enter the code from your authenticator app.`;
 
     return (
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
-          <View style={styles.headerContainer}>
-            <TouchableOpacity
-              onPress={() => {
-                setShowVerification(false);
-                setVerificationCode('');
-              }}
-              style={styles.backButton}
-            >
-              <Text style={styles.backButtonText}>←</Text>
-            </TouchableOpacity>
-            <Image
-              source={require('../../assets/images/icon.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-            <Text style={styles.title}>Verify Your Identity</Text>
-            <Text style={styles.subtitle}>{verificationMessage}</Text>
-          </View>
-
-          <View style={styles.formContainer}>
-            <InputField
-              key="verification-code"
-              icon="keypad-outline"
-              placeholder="Verification Code"
-              value={verificationCode}
-              onChangeText={setVerificationCode}
-              keyboardType="number-pad"
-            />
-
-            <Button
-              title="Verify"
-              onPress={handleVerifySecondFactor}
-              loading={isLoading}
-              disabled={!verificationCode.trim() || isLoading}
-              style={styles.signInBtn}
-            />
-
-            {secondFactorStrategy !== 'totp' && (
-              <Button
-                title="Resend Code"
-                variant="outline"
-                onPress={onResendCode}
-                style={styles.resendBtn}
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
+            <Animated.View entering={FadeInDown.duration(400)} style={styles.headerContainer}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowVerification(false);
+                  setVerificationCode('');
+                }}
+                style={styles.backButton}
+              >
+                <HugeiconsIcon icon={ArrowLeft01Icon} size={24} color={colors.text} />
+              </TouchableOpacity>
+              <Image
+                source={require('../../assets/images/icon.png')}
+                style={styles.logo}
+                resizeMode="contain"
               />
-            )}
+              <Text style={[styles.title, { color: colors.text }]}>Verify Your Identity</Text>
+              <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{verificationMessage}</Text>
+            </Animated.View>
 
-            <TouchableOpacity
-              onPress={() => {
-                setShowVerification(false);
-                setVerificationCode('');
-              }}
-              style={styles.editEmailBtn}
-            >
-              <Text style={styles.editEmailText}>Go back to sign in</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+            <Animated.View entering={FadeInUp.delay(200).duration(400)} style={styles.formContainer}>
+              <InputField
+                key="verification-code"
+                icon="keypad-outline"
+                placeholder="Verification Code"
+                value={verificationCode}
+                onChangeText={setVerificationCode}
+                keyboardType="number-pad"
+              />
+
+              <Button
+                title="Verify"
+                onPress={handleVerifySecondFactor}
+                loading={isLoading}
+                disabled={!verificationCode.trim() || isLoading}
+                style={styles.signInBtn}
+              />
+
+              {secondFactorStrategy !== 'totp' && (
+                <Button
+                  title="Resend Code"
+                  variant="outline"
+                  onPress={onResendCode}
+                  style={styles.resendBtn}
+                />
+              )}
+
+              <TouchableOpacity
+                onPress={() => {
+                  setShowVerification(false);
+                  setVerificationCode('');
+                }}
+                style={styles.editEmailBtn}
+              >
+                <Text style={[styles.editEmailText, { color: colors.textTertiary }]}>Go back to sign in</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </TouchableWithoutFeedback>
     );
   }
 
   // ── Sign-In Form ───────────────────────────────────────────────────
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
-        <View style={styles.headerContainer}>
-          <Image
-            source={require('../../assets/images/icon.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to continue your fitness journey</Text>
-        </View>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
+          <Animated.View entering={FadeInDown.duration(600)} style={styles.headerContainer}>
+            <Image
+              source={require('../../assets/images/icon.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+            <Text style={[styles.title, { color: colors.text }]}>Welcome Back</Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Sign in to continue your fitness journey</Text>
+          </Animated.View>
 
-        <View style={styles.formContainer}>
-          <InputField
-            key="email"
-            icon="mail-outline"
-            placeholder="Email Address"
-            value={emailAddress}
-            onChangeText={setEmailAddress}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
+          <Animated.View entering={FadeInUp.delay(200).duration(600)} style={styles.formContainer}>
+            <InputField
+              key="email"
+              icon="mail-outline"
+              placeholder="Email Address"
+              value={emailAddress}
+              onChangeText={setEmailAddress}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
 
-          <InputField
-            key="password"
-            icon="lock-closed-outline"
-            placeholder="Password"
-            value={password}
-            onChangeText={setPassword}
-            isPassword
-          />
+            <InputField
+              key="password"
+              icon="lock-closed-outline"
+              placeholder="Password"
+              value={password}
+              onChangeText={setPassword}
+              isPassword
+            />
 
-          {error ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{error}</Text>
+            {error ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            <Button
+              title="Sign In"
+              onPress={handleSubmit}
+              loading={isLoading}
+              disabled={isLoading}
+              style={styles.signInBtn}
+            />
+
+            <View style={styles.dividerContainer}>
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <Text style={[styles.dividerText, { color: colors.textTertiary }]}>OR</Text>
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
             </View>
-          ) : null}
 
-          <Button
-            title="Sign In"
-            onPress={handleSubmit}
-            loading={isLoading}
-            disabled={!emailAddress || !password || isLoading}
-            style={styles.signInBtn}
-          />
+            <Button
+              title="Continue with Google"
+              variant="outline"
+              onPress={onGoogleSignInPress}
+              leftIcon={<HugeiconsIcon icon={GoogleIcon} size={32} color="#EA4335" />}
+              style={styles.googleBtn}
+              textStyle={{ color: colors.text }}
+            />
+          </Animated.View>
 
-          <View style={styles.dividerContainer}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.divider} />
+          <View style={styles.footerContainer}>
+            <Text style={[styles.footerText, { color: colors.textSecondary }]}>Don't have an account? </Text>
+            <Link href="/(auth)/sign-up" asChild>
+              <TouchableOpacity>
+                <Text style={[styles.footerLink, { color: colors.accent }]}>Sign Up</Text>
+              </TouchableOpacity>
+            </Link>
           </View>
 
-          <Button
-            title="Continue with Google"
-            variant="outline"
-            onPress={onGoogleSignInPress}
-            style={styles.googleBtn}
-          />
-        </View>
-
-        <View style={styles.footerContainer}>
-          <Text style={styles.footerText}>Don't have an account? </Text>
-          <Link href="/(auth)/sign-up" asChild>
-            <Text style={styles.footerLink}>Sign Up</Text>
-          </Link>
-        </View>
-
-        {/* Required for Clerk bot protection */}
-        <View nativeID="clerk-captcha" />
-      </ScrollView>
-    </KeyboardAvoidingView>
+          {/* Required for Clerk bot protection */}
+          <View nativeID="clerk-captcha" />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }
 

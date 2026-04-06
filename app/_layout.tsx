@@ -11,8 +11,7 @@ import {
   registerForPushNotificationsAsync, 
   saveNotificationHistory, 
   scheduleDailyReminders, 
-  seedAdminSettings, 
-  seedWelcomeNotification 
+  seedAdminSettings 
 } from '../lib/notifications';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -98,7 +97,6 @@ const InitialLayout = () => {
       });
 
       seedAdminSettings();
-      seedWelcomeNotification(user.id);
 
       const notificationSubscription = Notifications.addNotificationReceivedListener(notification => {
         saveNotificationHistory(

@@ -51,7 +51,7 @@ export async function processMessage(
   imageBase64?: string
 ): Promise<ProcessedResult> {
   // 1. Load user memory
-  const memory = await getMemory();
+  const memory = await getMemory(userData.userId);
 
   // 2. Build context object
   const context: UserContext = {
@@ -86,7 +86,7 @@ export async function processMessage(
 
   // 5. Save memory update if present
   if (aiResponse.memory_update) {
-    await updateMemory(aiResponse.memory_update);
+    await updateMemory(userData.userId, aiResponse.memory_update);
     if (!actionStatus) {
       actionStatus = '🧠 Preferences saved';
     }

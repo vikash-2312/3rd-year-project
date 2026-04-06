@@ -13,10 +13,43 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { useHealthData } from '../hooks/useHealthData';
 import { useTheme } from '../lib/ThemeContext';
+import Animated, { 
+  useAnimatedStyle, 
+  withRepeat, 
+  withSequence, 
+  withTiming,
+  useSharedValue,
+  withSpring
+} from 'react-native-reanimated';
+import { format } from 'date-fns';
 
 export const HealthDashboard: React.FC = () => {
   const { data, loading, error, isAvailable, refresh } = useHealthData();
   const { colors, isDark } = useTheme();
+  const [lastSynced, setLastSynced] = React.useState<Date>(new Date());
+
+  const dotOpacity = useSharedValue(1);
+
+  React.useEffect(() => {
+    dotOpacity.value = withRepeat(
+      withSequence(
+        withTiming(0.4, { duration: 1000 }),
+        withTiming(1, { duration: 1000 })
+      ),
+      -1,
+      true
+    );
+  }, []);
+
+  React.useEffect(() => {
+    if (!loading && !error) {
+      setLastSynced(new Date());
+    }
+  }, [loading, error]);
+
+  const dotStyle = useAnimatedStyle(() => ({
+    opacity: dotOpacity.value,
+  }));
 
   const theme = {
     background: colors.background,
@@ -40,9 +73,17 @@ export const HealthDashboard: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: theme.card, borderColor: theme.border }]}>
       <View style={styles.header}>
-        <View style={styles.titleRow}>
-          <HugeiconsIcon icon={SmartWatch01Icon} color={theme.accent} size={24} />
-          <Text style={[styles.title, { color: theme.text }]}>Health Activity</Text>
+        <View style={styles.headerLeft}>
+          <View style={styles.titleRow}>
+            <HugeiconsIcon icon={SmartWatch01Icon} color={theme.accent} size={24} />
+            <Text style={[styles.title, { color: theme.text }]}>Health Activity</Text>
+          </View>
+          <View style={styles.syncStatus}>
+            <Animated.View style={[styles.statusDot, dotStyle]} />
+            <Text style={[styles.syncText, { color: colors.textTertiary }]}>
+              Synced {format(lastSynced, 'HH:mm')}
+            </Text>
+          </View>
         </View>
         <TouchableOpacity onPress={refresh} disabled={loading} style={styles.refreshBtn}>
           {loading ? (
@@ -114,8 +155,27 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 20,
+  },
+  headerLeft: {
+    gap: 4,
+  },
+  syncStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginLeft: 34,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#4ADE80',
+  },
+  syncText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   titleRow: {
     flexDirection: 'row',
@@ -128,6 +188,8 @@ const styles = StyleSheet.create({
   },
   refreshBtn: {
     padding: 8,
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    borderRadius: 12,
   },
   grid: {
     flexDirection: 'row',

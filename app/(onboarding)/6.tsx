@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button } from '../../components/Button';
+import { useUser } from '@clerk/expo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Leaf01Icon, NaturalFoodIcon, Dish01Icon, Restaurant01Icon } from '@hugeicons/core-free-icons';
@@ -9,11 +10,12 @@ import * as Haptics from 'expo-haptics';
 
 export default function Step6Diet() {
   const router = useRouter();
+  const { user } = useUser();
   const [selectedDiet, setSelectedDiet] = useState<string | null>(null);
 
   const handleNext = async () => {
-    if (selectedDiet) {
-      await AsyncStorage.setItem('onboarding_diet', selectedDiet);
+    if (selectedDiet && user?.id) {
+      await AsyncStorage.setItem(`onboarding_diet_${user.id}`, selectedDiet);
       router.push('/(onboarding)/generating');
     }
   };
@@ -54,7 +56,7 @@ export default function Step6Diet() {
       <Button 
         title="Continue" 
         onPress={handleNext} 
-        disabled={!selectedDiet}
+        disabled={!selectedDiet || !user?.id}
         style={styles.button}
       />
     </View>

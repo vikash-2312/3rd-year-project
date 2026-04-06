@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button } from '../../components/Button';
+import { useUser } from '@clerk/expo';
 import { InputField } from '../../components/InputField';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 
 export default function Step5Measurements() {
   const router = useRouter();
+  const { user } = useUser();
   const [weight, setWeight] = useState('');
   const [heightCm, setHeightCm] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -15,13 +17,13 @@ export default function Step5Measurements() {
   const isValidMeasurements = weight.length > 0 && heightCm.length > 0;
 
   const handleNext = async () => {
-    if (!isValidMeasurements) return;
+    if (!isValidMeasurements || !user?.id) return;
     setIsSubmitting(true);
 
     try {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      await AsyncStorage.setItem('onboarding_weight', weight);
-      await AsyncStorage.setItem('onboarding_height_cm', heightCm);
+      await AsyncStorage.setItem(`onboarding_weight_${user.id}`, weight);
+      await AsyncStorage.setItem(`onboarding_height_cm_${user.id}`, heightCm);
       
       // Navigate to the next step (Step 6: Diet)
       router.push('/(onboarding)/6');
@@ -84,7 +86,7 @@ export default function Step5Measurements() {
           <Button 
             title="Continue" 
             onPress={handleNext} 
-            disabled={!isValidMeasurements || isSubmitting}
+            disabled={!isValidMeasurements || isSubmitting || !user?.id}
             loading={isSubmitting}
             style={styles.button}
           />

@@ -18,7 +18,8 @@ import { processMessage } from '../services/chatService';
 
 // --- Constants ---
 
-const CHAT_HISTORY_KEY = '@ai_chat_history';
+const getChatHistoryKey = (userId: string) => `@ai_chat_history_${userId}`;
+const LEGACY_CHAT_KEY = '@ai_chat_history'; // Migration handle
 const CHAT_IMAGE_DIR = `${(FileSystem as any).documentDirectory}chat_assets/`;
 const MAX_STORED_MESSAGES = 50;
 
@@ -31,14 +32,34 @@ export function useChat() {
   const [userData, setUserData] = useState<any>(null);
   const isInitialized = useRef(false);
 
-  // --- Load persisted chat history on mount ---
+  // --- Load persisted chat history on mount or user change ---
   useEffect(() => {
+    if (!user) {
+      setMessages([]);
+      return;
+    }
+
     const loadHistory = async () => {
       try {
-        const raw = await AsyncStorage.getItem(CHAT_HISTORY_KEY);
+        const key = getChatHistoryKey(user.id);
+        let raw = await AsyncStorage.getItem(key);
+        
+        // --- LATE-MIGRATION BRIDGE (Identity-Lock Patch) ---
+        if (!raw) {
+          const legacyRaw = await AsyncStorage.getItem(LEGACY_CHAT_KEY);
+          if (legacyRaw) {
+            console.log(`[useChat] 🏹 Migrating legacy chat history to vault for ${user.id}`);
+            await AsyncStorage.setItem(key, legacyRaw); 
+            await AsyncStorage.removeItem(LEGACY_CHAT_KEY);
+            raw = legacyRaw;
+          }
+        }
+
         if (raw) {
           const parsed = JSON.parse(raw) as ChatMessage[];
           setMessages(parsed);
+        } else {
+          setMessages([]); // Reset for new user
         }
       } catch (error) {
         console.error('[useChat] Error loading chat history:', error);
@@ -47,11 +68,11 @@ export function useChat() {
     };
 
     loadHistory();
-  }, []);
+  }, [user?.id]);
 
   // --- Persist messages when they change ---
   useEffect(() => {
-    if (!isInitialized.current) return; // Don't save before initial load
+    if (!isInitialized.current || !user) return; // Don't save before initial load or no user
 
     const persist = async () => {
       try {
@@ -63,14 +84,15 @@ export function useChat() {
           }
           return msg;
         });
-        await AsyncStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(toSave));
+        const key = getChatHistoryKey(user.id);
+        await AsyncStorage.setItem(key, JSON.stringify(toSave));
       } catch (error) {
         console.error('[useChat] Error saving chat history:', error);
       }
     };
 
     persist();
-  }, [messages]);
+  }, [messages, user?.id]);
 
   // --- Fetch user data from Firestore ---
   const fetchUserData = useCallback(async () => {
@@ -256,13 +278,15 @@ export function useChat() {
 
   // --- Clear chat ---
   const clearChat = useCallback(async () => {
+    if (!user) return;
     setMessages([]);
     try {
-      await AsyncStorage.removeItem(CHAT_HISTORY_KEY);
+      const key = getChatHistoryKey(user.id);
+      await AsyncStorage.removeItem(key);
     } catch (error) {
       console.error('[useChat] Error clearing chat history:', error);
     }
-  }, []);
+  }, [user?.id]);
 
   return {
     messages,

@@ -19,7 +19,8 @@ export interface UserMemory {
 
 // --- Constants ---
 
-const MEMORY_KEY = '@ai_fitness_user_memory';
+const getMemoryKey = (userId: string) => `@ai_user_memory_${userId}`;
+const LEGACY_KEY = '@ai_fitness_user_memory'; // Migration handle
 
 const DEFAULT_MEMORY: UserMemory = {
   allergies: [],
@@ -34,9 +35,22 @@ const DEFAULT_MEMORY: UserMemory = {
  * Retrieves the full user memory object from persistent storage.
  * Returns default empty memory if nothing is stored yet.
  */
-export async function getMemory(): Promise<UserMemory> {
+export async function getMemory(userId: string): Promise<UserMemory> {
   try {
-    const raw = await AsyncStorage.getItem(MEMORY_KEY);
+    const key = getMemoryKey(userId);
+    let raw = await AsyncStorage.getItem(key);
+    
+    // --- LATE-MIGRATION BRIDGE (Identity-Lock Patch) ---
+    if (!raw) {
+      const legacyRaw = await AsyncStorage.getItem(LEGACY_KEY);
+      if (legacyRaw) {
+        console.log(`[MemoryService] 🏹 Migrating legacy data to vault for ${userId}`);
+        await AsyncStorage.setItem(key, legacyRaw);
+        await AsyncStorage.removeItem(LEGACY_KEY);
+        raw = legacyRaw;
+      }
+    }
+
     if (!raw) return { ...DEFAULT_MEMORY };
 
     const parsed = JSON.parse(raw);
@@ -48,7 +62,7 @@ export async function getMemory(): Promise<UserMemory> {
       conditions: parsed.conditions || [],
     };
   } catch (error) {
-    console.error('[MemoryService] Error reading memory:', error);
+    console.error(`[MemoryService] Error reading memory for ${userId}:`, error);
     return { ...DEFAULT_MEMORY };
   }
 }
@@ -56,15 +70,10 @@ export async function getMemory(): Promise<UserMemory> {
 /**
  * Merges a partial update into the existing user memory.
  * Arrays are merged (union, no duplicates). Strings are overwritten.
- * 
- * Example:
- *   existing: { allergies: ["peanuts"], diet: "keto" }
- *   update:   { allergies: ["shellfish"], diet: "vegetarian" }
- *   result:   { allergies: ["peanuts", "shellfish"], diet: "vegetarian" }
  */
-export async function updateMemory(partial: Partial<UserMemory>): Promise<UserMemory> {
+export async function updateMemory(userId: string, partial: Partial<UserMemory>): Promise<UserMemory> {
   try {
-    const current = await getMemory();
+    const current = await getMemory(userId);
 
     // Merge arrays (deduplicated), overwrite strings
     const updated: UserMemory = {
@@ -83,24 +92,24 @@ export async function updateMemory(partial: Partial<UserMemory>): Promise<UserMe
       ]),
     };
 
-    await AsyncStorage.setItem(MEMORY_KEY, JSON.stringify(updated));
-    console.log('[MemoryService] Memory updated:', updated);
+    await AsyncStorage.setItem(getMemoryKey(userId), JSON.stringify(updated));
+    console.log(`[MemoryService] Memory updated for ${userId}:`, updated);
     return updated;
   } catch (error) {
-    console.error('[MemoryService] Error updating memory:', error);
+    console.error(`[MemoryService] Error updating memory for ${userId}:`, error);
     throw error;
   }
 }
 
 /**
- * Resets user memory to empty defaults.
+ * Resets user memory to empty defaults for a specific user.
  */
-export async function clearMemory(): Promise<void> {
+export async function clearMemory(userId: string): Promise<void> {
   try {
-    await AsyncStorage.setItem(MEMORY_KEY, JSON.stringify(DEFAULT_MEMORY));
-    console.log('[MemoryService] Memory cleared');
+    await AsyncStorage.setItem(getMemoryKey(userId), JSON.stringify(DEFAULT_MEMORY));
+    console.log(`[MemoryService] Memory cleared for ${userId}`);
   } catch (error) {
-    console.error('[MemoryService] Error clearing memory:', error);
+    console.error(`[MemoryService] Error clearing memory for ${userId}:`, error);
     throw error;
   }
 }

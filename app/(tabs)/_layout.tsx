@@ -14,7 +14,17 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Tabs, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import * as Haptics from 'expo-haptics';
+import Animated, { 
+  useAnimatedStyle, 
+  useSharedValue, 
+  withTiming, 
+  withSpring,
+  withRepeat,
+  Easing,
+  FadeInDown,
+} from 'react-native-reanimated';
+import React, { useState, useEffect } from 'react';
 import {
   Dimensions,
   Modal,
@@ -22,11 +32,91 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
+  Platform
 } from 'react-native';
 import { useTheme } from '../../lib/ThemeContext';
+import { BlurView } from 'expo-blur';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const TAB_BAR_MARGIN = 20;
+const TAB_BAR_WIDTH = SCREEN_WIDTH - (TAB_BAR_MARGIN * 2);
+const TAB_COUNT = 3; // Home, Analytics, Profile
+const TAB_WIDTH = (TAB_BAR_WIDTH - 32) / TAB_COUNT;
+
+const PulseTabIcon = ({ icon, color, size, focused }: { icon: any, color: string, size: number, focused: boolean }) => {
+  const scale = useSharedValue(1);
+  const opacity = useSharedValue(1);
+
+  useEffect(() => {
+    if (focused) {
+      scale.value = withRepeat(
+        withTiming(1.1, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+        -1,
+        true
+      );
+      opacity.value = withRepeat(
+        withTiming(0.8, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+        -1,
+        true
+      );
+    } else {
+      scale.value = withTiming(1, { duration: 200 });
+      opacity.value = withTiming(0.6, { duration: 200 });
+    }
+  }, [focused]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
+  return (
+    <Animated.View style={[animatedStyle, styles.tabIconContainer]}>
+      <HugeiconsIcon icon={icon} size={size} color={color} />
+      {focused && (
+        <Animated.View 
+          entering={FadeInDown.duration(200)}
+          style={[styles.activeDot, { backgroundColor: color }]} 
+        />
+      )}
+    </Animated.View>
+  );
+};
+
+const HybridTabBackground = ({ colors, isDark, stateIndex }: { colors: any, isDark: boolean, stateIndex: number }) => {
+  const translateX = useSharedValue(stateIndex * TAB_WIDTH);
+
+  useEffect(() => {
+    translateX.value = withSpring(stateIndex * TAB_WIDTH, {
+      damping: 15,
+      stiffness: 90,
+    });
+  }, [stateIndex]);
+
+  const sliderStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      <BlurView
+        intensity={isDark ? 85 : 100}
+        tint={isDark ? 'dark' : 'light'}
+        style={[
+          styles.blurShell,
+          { 
+            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+            backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)'
+          }
+        ]}
+      />
+      <View style={styles.sliderContainer}>
+        <Animated.View style={[styles.activeSlider, sliderStyle, { backgroundColor: `${colors.accent}15` }]} />
+      </View>
+    </View>
+  );
+};
 
 function TabsLayout() {
   const [isModalVisible, setModalVisible] = useState(false);
@@ -39,10 +129,7 @@ function TabsLayout() {
   };
 
   const handleOptionPress = (option: string) => {
-    console.log(`[FAB] Option pressed: ${option}`);
     setModalVisible(false);
-
-    // Small delay to let the modal close before navigating
     setTimeout(() => {
       if (option === 'Food Database') {
         router.push('/food-search');
@@ -52,102 +139,39 @@ function TabsLayout() {
         router.push('/log-exercise');
       } else if (option === 'Add Drink Water') {
         router.push('/log-water');
-      } else if (option === 'Progress Photo') {
-        pickProgressPhoto();
-      } else if (option === 'AI Chat') {
-        router.push('/ai-coach' as any);
-      } else {
-        console.log(`[FAB] Other option: ${option}`);
+      } else if (option === 'AI Workout') {
+        router.push('/ai-workout' as any);
       }
     }, 300);
   };
 
   const pickImage = async (useCamera: boolean) => {
     setPhotoModalVisible(false);
-
     try {
-      // Check if ImagePicker native module is available
       if (useCamera) {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== 'granted') {
-          alert('Sorry, we need camera permissions to make this work!');
-          return;
-        }
+        if (status !== 'granted') return;
       } else {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-          alert('Sorry, we need camera roll permissions to make this work!');
-          return;
-        }
+        if (status !== 'granted') return;
       }
 
       const result = useCamera
-        ? await ImagePicker.launchCameraAsync({
-          mediaTypes: 'images',
-          allowsEditing: true,
-          aspect: [4, 3],
-          quality: 0.8,
-          base64: false,
-        })
-        : await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: 'images',
-          allowsEditing: true,
-          aspect: [4, 3],
-          quality: 0.8,
-          base64: false,
-        });
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: 'images', allowsEditing: true, aspect: [4, 3], quality: 0.8 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', allowsEditing: true, aspect: [4, 3], quality: 0.8 });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const imageUri = result.assets[0].uri;
-
         router.push({
           pathname: '/analyze-food',
-          params: {
-            imageUri: encodeURIComponent(imageUri),
-          }
+          params: { imageUri: encodeURIComponent(result.assets[0].uri) }
         });
       }
-    } catch (error: any) {
-      if (error?.message?.includes('native module')) {
-        alert('Image Picker is not available in Expo Go. Please use a development build to scan food.');
-      } else {
-        console.error("Error picking image:", error);
-        alert('Failed to pick image. Please try again.');
-      }
+    } catch (error) {
+      console.error("Error picking image:", error);
     }
   };
 
-  const pickProgressPhoto = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        alert('Sorry, we need media library permissions to add progress photos!');
-        return;
-      }
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: 'images',
-        allowsEditing: true,
-        aspect: [3, 4],
-        quality: 0.7,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const imageUri = result.assets[0].uri;
-        router.push({
-          pathname: '/add-progress-photo',
-          params: { imageUri: encodeURIComponent(imageUri) },
-        });
-      }
-    } catch (error: any) {
-      if (error?.message?.includes('native module')) {
-        alert('Image Picker is not available in Expo Go. Please use a development build.');
-      } else {
-        console.error('Error picking progress photo:', error);
-        alert('Failed to pick image. Please try again.');
-      }
-    }
-  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -155,23 +179,66 @@ function TabsLayout() {
         screenOptions={{
           headerShown: false,
           tabBarShowLabel: false,
-          tabBarStyle: [styles.tabBar, { backgroundColor: colors.tabBar }],
+          tabBarStyle: styles.tabBar,
           tabBarActiveTintColor: colors.accent,
-          tabBarInactiveTintColor: colors.textMuted,
-
+          tabBarInactiveTintColor: colors.textTertiary,
           tabBarItemStyle: {
-            flex: 1,
-            alignItems: "center",
-            justifyContent: "center",
+            height: 60,
+            justifyContent: 'center',
+            alignItems: 'center',
           }
+        }}
+        screenListeners={{
+          tabPress: () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
+        }}
+        tabBar={(props) => {
+          // Filter out the _placeholder route for the custom tab bar UI
+          const visibleRoutes = props.state.routes.filter(r => r.name !== '_placeholder');
+          
+          return (
+            <View style={styles.tabBarWrapper}>
+              <HybridTabBackground colors={colors} isDark={isDark} stateIndex={props.state.index} />
+              <View style={styles.tabIconsRow}>
+                {visibleRoutes.map((route, index) => {
+                  const { options } = props.descriptors[route.key];
+                  const isFocused = props.state.index === index;
+
+                  const onPress = () => {
+                    const event = props.navigation.emit({
+                      type: 'tabPress',
+                      target: route.key,
+                      canPreventDefault: true,
+                    });
+
+                    if (!isFocused && !event.defaultPrevented) {
+                      props.navigation.navigate(route.name);
+                    }
+                  };
+
+                  return (
+                    <TouchableOpacity
+                      key={route.key}
+                      onPress={onPress}
+                      style={{ width: TAB_WIDTH, alignItems: 'center', justifyContent: 'center' }}
+                      activeOpacity={0.7}
+                    >
+                      {options.tabBarIcon?.({ color: isFocused ? colors.accent : colors.textTertiary, focused: isFocused, size: 24 })}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          );
         }}
       >
         <Tabs.Screen
           name="index"
           options={{
             title: 'Home',
-            tabBarIcon: ({ color }) => (
-              <HugeiconsIcon icon={Home01Icon} size={24} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <PulseTabIcon icon={Home01Icon} size={24} color={color} focused={focused} />
             ),
           }}
         />
@@ -179,8 +246,8 @@ function TabsLayout() {
           name="analytics"
           options={{
             title: 'Analytics',
-            tabBarIcon: ({ color }) => (
-              <HugeiconsIcon icon={Analytics01Icon} size={24} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <PulseTabIcon icon={Analytics01Icon} size={24} color={color} focused={focused} />
             ),
           }}
         />
@@ -188,8 +255,8 @@ function TabsLayout() {
           name="profile"
           options={{
             title: 'Profile',
-            tabBarIcon: ({ color }) => (
-              <HugeiconsIcon icon={UserCircleIcon} size={28} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <PulseTabIcon icon={UserCircleIcon} size={24} color={color} focused={focused} />
             ),
           }}
         />
@@ -198,29 +265,21 @@ function TabsLayout() {
           options={{
             title: '',
             tabBarIcon: () => null,
-            tabBarButton: () => (
-              <View style={{ flex: 1, pointerEvents: 'none' }} />
-            ),
+            href: null, // Completely hide from Tabs
           }}
         />
       </Tabs>
 
-      {/* Floating Action Button (Background trigger) */}
       {!isModalVisible && (
         <TouchableOpacity
-          style={styles.fab}
+          style={[styles.fab, styles.fabFloating]}
           onPress={handleFabPress}
           activeOpacity={0.8}
         >
-          <HugeiconsIcon
-            icon={Add01Icon}
-            size={25}
-            color="#FFFFFF"
-          />
+          <HugeiconsIcon icon={Add01Icon} size={24} color="#FFFFFF" />
         </TouchableOpacity>
       )}
 
-      {/* Bottom Modal */}
       <Modal
         visible={isModalVisible}
         transparent
@@ -228,95 +287,56 @@ function TabsLayout() {
         statusBarTranslucent
         onRequestClose={() => setModalVisible(false)}
       >
-        {/* Overlay: tap to dismiss */}
         <Pressable style={styles.modalOverlay} onPress={() => setModalVisible(false)}>
-          {/* Modal Content */}
-          <Pressable style={styles.modalContent} onPress={(e) => { /* Prevent clicks from reaching overlay */ }}>
+          <Pressable style={styles.modalContent}>
             <View style={styles.optionsGrid}>
-              <TouchableOpacity
-                style={[styles.optionCard, { backgroundColor: colors.card }]}
-                activeOpacity={0.7}
-                onPress={() => handleOptionPress('Log Exercise')}
-              >
+              <TouchableOpacity style={[styles.optionCard, { backgroundColor: colors.card }]} onPress={() => handleOptionPress('Log Exercise')}>
                 <View style={[styles.optionIconCircle, { backgroundColor: isDark ? '#3B1A1A' : '#FFF5F5' }]}>
                   <HugeiconsIcon icon={Dumbbell01Icon} size={24} color={isDark ? '#FC8181' : '#E53E3E'} />
                 </View>
                 <Text style={[styles.optionLabel, { color: colors.text }]}>Log Exercise</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.optionCard, { backgroundColor: colors.card }]}
-                activeOpacity={0.7}
-                onPress={() => handleOptionPress('Add Drink Water')}
-              >
+              <TouchableOpacity style={[styles.optionCard, { backgroundColor: colors.card }]} onPress={() => handleOptionPress('Add Drink Water')}>
                 <View style={[styles.optionIconCircle, { backgroundColor: colors.blueLight }]}>
                   <HugeiconsIcon icon={DropletIcon} size={24} color={colors.blue} />
                 </View>
                 <Text style={[styles.optionLabel, { color: colors.text }]}>Add Drink Water</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.optionCard, { backgroundColor: colors.card }]}
-                activeOpacity={0.7}
-                onPress={() => handleOptionPress('Food Database')}
-              >
+              <TouchableOpacity style={[styles.optionCard, { backgroundColor: colors.card }]} onPress={() => handleOptionPress('Food Database')}>
                 <View style={[styles.optionIconCircle, { backgroundColor: isDark ? '#3B2A1A' : '#FFFBEB' }]}>
                   <HugeiconsIcon icon={SearchSquareIcon} size={24} color={isDark ? '#FBD38D' : '#DD6B20'} />
                 </View>
                 <Text style={[styles.optionLabel, { color: colors.text }]}>Food Database</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.optionCard, { backgroundColor: colors.card }]}
-                activeOpacity={0.7}
-                onPress={() => handleOptionPress('Scan Food')}
-              >
+              <TouchableOpacity style={[styles.optionCard, { backgroundColor: colors.card }]} onPress={() => handleOptionPress('Scan Food')}>
                 <View style={[styles.optionIconCircle, { backgroundColor: colors.accentLight }]}>
                   <HugeiconsIcon icon={ScanIcon} size={24} color={colors.accent} />
                 </View>
                 <Text style={[styles.optionLabel, { color: colors.text }]}>Scan Food</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.optionCard, { backgroundColor: colors.card }]}
-                activeOpacity={0.7}
-                onPress={() => handleOptionPress('Progress Photo')}
-              >
-                <View style={[styles.optionIconCircle, { backgroundColor: isDark ? '#1A2A3B' : '#E0F7FA' }]}>
-                  <HugeiconsIcon icon={Camera02Icon} size={24} color={isDark ? '#4DD0E1' : '#00897B'} />
+              <TouchableOpacity style={[styles.optionCard, { backgroundColor: colors.card }]} onPress={() => handleOptionPress('AI Workout')}>
+                <View style={[styles.optionIconCircle, { backgroundColor: isDark ? '#1C3829' : '#F0FFF4' }]}>
+                  <HugeiconsIcon icon={SparklesIcon} size={24} color={colors.accent} />
                 </View>
-                <Text style={[styles.optionLabel, { color: colors.text }]}>Progress Photo</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.optionCard, { backgroundColor: colors.card }]}
-                activeOpacity={0.7}
-                onPress={() => handleOptionPress('AI Chat')}
-              >
-                <View style={[styles.optionIconCircle, { backgroundColor: colors.purpleLight }]}>
-                  <HugeiconsIcon icon={SparklesIcon} size={24} color={colors.purple} />
-                </View>
-                <Text style={[styles.optionLabel, { color: colors.text }]}>AI Coach</Text>
+                <Text style={[styles.optionLabel, { color: colors.text }]}>AI Workout</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
 
-          {/* Fixed FAB Toggle inside Modal (to handle close) */}
           <TouchableOpacity
-            style={[styles.fab, styles.fabActive]}
+            style={[styles.fab, styles.fabFloating, styles.fabActive]}
             onPress={() => setModalVisible(false)}
             activeOpacity={0.8}
           >
-            <HugeiconsIcon
-              icon={Cancel01Icon}
-              size={25}
-              color="#FFFFFF"
-            />
+            <HugeiconsIcon icon={Cancel01Icon} size={24} color="#FFFFFF" />
           </TouchableOpacity>
         </Pressable>
       </Modal>
 
-      {/* Photo Source Modal */}
       <Modal
         visible={isPhotoModalVisible}
         transparent
@@ -327,27 +347,14 @@ function TabsLayout() {
         <Pressable style={styles.modalOverlay} onPress={() => setPhotoModalVisible(false)}>
           <View style={[styles.photoModalContent, { backgroundColor: colors.card }]}>
             <Text style={[styles.photoModalTitle, { color: colors.text }]}>Select Image Source</Text>
-
-            <TouchableOpacity
-              style={styles.photoOptionButton}
-              onPress={() => pickImage(true)}
-            >
+            <TouchableOpacity style={styles.photoOptionButton} onPress={() => pickImage(true)}>
               <Text style={[styles.photoOptionText, { color: colors.accent }]}>Take a Photo</Text>
             </TouchableOpacity>
-
             <View style={[styles.photoDivider, { backgroundColor: colors.border }]} />
-
-            <TouchableOpacity
-              style={styles.photoOptionButton}
-              onPress={() => pickImage(false)}
-            >
+            <TouchableOpacity style={styles.photoOptionButton} onPress={() => pickImage(false)}>
               <Text style={[styles.photoOptionText, { color: colors.accent }]}>Choose from Gallery</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.photoCancelButton, { backgroundColor: colors.cardAlt }]}
-              onPress={() => setPhotoModalVisible(false)}
-            >
+            <TouchableOpacity style={[styles.photoCancelButton, { backgroundColor: colors.cardAlt }]} onPress={() => setPhotoModalVisible(false)}>
               <Text style={[styles.photoCancelText, { color: colors.danger }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -360,54 +367,87 @@ function TabsLayout() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  tabBarWrapper: {
+    position: 'absolute',
+    bottom: 24,
+    left: TAB_BAR_MARGIN,
+    right: TAB_BAR_MARGIN,
+    height: 60,
+    borderRadius: 30,
+    overflow: 'hidden',
+  },
+  blurShell: {
+    ...StyleSheet.absoluteFillObject,
+    borderWidth: 1.5,
+  },
+  tabIconsRow: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  sliderContainer: {
+    ...StyleSheet.absoluteFillObject,
+    paddingHorizontal: 16,
     justifyContent: 'center',
-    backgroundColor: '#F7FAFC',
+  },
+  activeSlider: {
+    width: TAB_WIDTH,
+    height: 44,
+    borderRadius: 22,
   },
   tabBar: {
     position: 'absolute',
-    bottom: 24,
-    marginHorizontal: 40,
-    left: 20,
-    right: 20,
-    height: 60,
-    borderRadius: 30,
-    paddingHorizontal: 16,
-    paddingTop: 6
-
+    bottom: 0,
+    backgroundColor: 'transparent',
+    elevation: 0,
+    borderTopWidth: 0,
+    height: 0,
+  },
+  tabIconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 40,
+  },
+  activeDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    marginTop: 4,
   },
   fab: {
     position: 'absolute',
-    bottom: 50, // Centered vertically in the 60px height tab bar ( (60-50)/2 + 24 )
-    left: 10 + ((SCREEN_WIDTH - 40) * 0.875) - 25, // Centered in the 4th slot of 4 20  
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: '#009050',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 9,
-    shadowColor: '#009050',
+    elevation: 10,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
-    zIndex: 1000,
+    zIndex: 1001,
+  },
+  fabFloating: {
+    bottom: 94, // (24 padding + 60 height + 10 gap)
+    left: SCREEN_WIDTH / 2 - 26, // Horizontal center
   },
   fabActive: {
     backgroundColor: '#E53E3E',
-    shadowColor: '#E53E3E',
   },
-
-  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: 'transparent',
     paddingTop: 24,
     paddingHorizontal: 20,
-    paddingBottom: 120, // Space to clear the floating tab bar + FAB
+    paddingBottom: 160, // Restored to lower value for 2 rows
   },
   optionsGrid: {
     flexDirection: 'row',
@@ -416,18 +456,12 @@ const styles = StyleSheet.create({
   },
   optionCard: {
     width: '47%',
-    backgroundColor: '#FFFFFF',
     borderRadius: 24,
     paddingVertical: 20,
     paddingHorizontal: 16,
     alignItems: 'center',
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 4,
-    position: 'relative',
+    elevation: 3,
   },
   optionIconCircle: {
     width: 52,
@@ -439,72 +473,41 @@ const styles = StyleSheet.create({
   },
   optionLabel: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#2D3748',
+    fontWeight: '700',
     textAlign: 'center',
   },
-
-  // Premium badge
-  premiumBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFF0',
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: '#FEFCBF',
-  },
-  premiumText: {
-    fontSize: 9,
-    fontWeight: 'bold',
-    color: '#D69E2E',
-    marginLeft: 2,
-  },
-
-  // Photo Source Modal Styles
   photoModalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
     padding: 24,
     paddingBottom: 40,
   },
   photoModalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2D3748',
+    fontWeight: '800',
     textAlign: 'center',
     marginBottom: 16,
   },
   photoOptionButton: {
-    paddingVertical: 16,
+    paddingVertical: 18,
     alignItems: 'center',
   },
   photoOptionText: {
     fontSize: 16,
-    color: '#009050',
-    fontWeight: '600',
+    fontWeight: '700',
   },
   photoDivider: {
     height: 1,
-    backgroundColor: '#EDF2F7',
-    marginHorizontal: 16,
   },
   photoCancelButton: {
     marginTop: 16,
-    paddingVertical: 16,
+    paddingVertical: 18,
     alignItems: 'center',
-    backgroundColor: '#F7FAFC',
-    borderRadius: 12,
+    borderRadius: 20,
   },
   photoCancelText: {
     fontSize: 16,
-    color: '#E53E3E',
-    fontWeight: '600',
+    fontWeight: '800',
   }
 });
 

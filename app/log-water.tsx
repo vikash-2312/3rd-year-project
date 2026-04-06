@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { format } from 'date-fns';
 import React, { useState } from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View, ScrollView } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft02Icon, PlusSignIcon, MinusSignIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
@@ -20,12 +21,14 @@ export default function LogWater() {
 
   const increment = () => {
     if (ml < MAX_ML) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setMl(prev => prev + HALF_GLASS_ML);
     }
   };
 
   const decrement = () => {
     if (ml > 0) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setMl(prev => prev - HALF_GLASS_ML);
     }
   };
@@ -94,6 +97,7 @@ export default function LogWater() {
         date: dateStr,
         timestamp: serverTimestamp(),
       });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch (error) {
       console.error("Error logging water:", error);

@@ -206,8 +206,15 @@ export async function seedWelcomeNotification(userId: string) {
   try {
     // Check if we've already sent it
     const snap = await getDoc(userRef);
-    const data = snap.data() || {};
+    
+    // Safety check: If document doesn't exist yet, we can't reliably check
+    // However, in the onboarding flow, we call this AFTER setDoc, so it SHOULD exist.
+    if (!snap.exists()) {
+      console.log('[Notifications] User document not found, skipping welcome seed for now');
+      return;
+    }
 
+    const data = snap.data() || {};
     if (!data.welcomeNotifSent) {
       console.log('[Notifications] Seeding welcome notification...');
       // Write the welcome notification

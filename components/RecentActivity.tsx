@@ -27,7 +27,7 @@ type RecentActivityProps = {
   isToday?: boolean;
 };
 
-export function RecentActivity({ activities = [], onDelete, isToday = false }: RecentActivityProps) {
+export const RecentActivity = React.memo(({ activities = [], onDelete, isToday = false }: RecentActivityProps) => {
   const isEmpty = activities.length === 0;
   const { colors, isDark } = useTheme();
 
@@ -55,7 +55,7 @@ export function RecentActivity({ activities = [], onDelete, isToday = false }: R
           </Text>
         </View>
       ) : (
-        activities.filter(activity => activity.type !== 'water').map((activity) => {
+        (activities || []).filter(activity => activity && activity.type !== 'water').map((activity) => {
             if (activity.type === 'exercise') {
             return (
               <View key={activity.id} style={[styles.exerciseCard, { backgroundColor: colors.card }]}>
@@ -164,7 +164,7 @@ export function RecentActivity({ activities = [], onDelete, isToday = false }: R
       )}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

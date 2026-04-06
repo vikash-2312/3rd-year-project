@@ -21,6 +21,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, { FadeInRight, FadeInLeft, Layout } from 'react-native-reanimated';
+import { ScanOverlay } from '../components/ScanOverlay';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -125,7 +126,8 @@ function TypingIndicator({ colors }: { colors: any }) {
 
 // --- Smart Text Formatter ---
 // Renders AI response text with proper formatting: bold sections, bullet points, spacing
-function FormattedText({ text, color }: { text: string; color: string }) {
+function FormattedText({ text = '', color }: { text?: string; color: string }) {
+  if (!text) return null;
   const lines = text.split('\n');
 
   const renderContent = (content: string, isHeader = false) => {
@@ -199,16 +201,17 @@ function FormattedText({ text, color }: { text: string; color: string }) {
 
 // --- Quick Action Buttons ---
 function QuickActionButtons({
-  actions,
+  actions = [],
   onPress,
   colors,
   isDark,
 }: {
-  actions: { label: string; message: string }[];
+  actions?: { label: string; message: string }[];
   onPress: (message: string) => void;
   colors: any;
   isDark: boolean;
 }) {
+  if (!actions || actions.length === 0) return null;
   return (
     <View style={styles.quickActionsContainer}>
       <ScrollView
@@ -363,6 +366,7 @@ export default function AICoachScreen() {
   const [inputText, setInputText] = useState('');
   const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
   const [selectedImageBase64, setSelectedImageBase64] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   const handlePickImage = async () => {
@@ -415,12 +419,24 @@ export default function AICoachScreen() {
     if ((!inputText.trim() && !selectedImageBase64) || isLoading) return;
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    if (selectedImageBase64) {
+      setIsScanning(true);
+    }
+    
     sendMessage(inputText, selectedImageUri || undefined, selectedImageBase64 || undefined);
     setInputText('');
     setSelectedImageUri(null);
     setSelectedImageBase64(null);
     Keyboard.dismiss();
   }, [inputText, isLoading, sendMessage, selectedImageUri, selectedImageBase64]);
+
+  useEffect(() => {
+    if (!isLoading && isScanning) {
+      setIsScanning(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }, [isLoading, isScanning]);
 
   const handleQuickAction = useCallback(
     (message: string) => {
@@ -531,6 +547,8 @@ export default function AICoachScreen() {
           />
         </TouchableOpacity>
       </View>
+
+      <ScanOverlay visible={isScanning} />
 
       {/* Chat Body */}
       <KeyboardAvoidingView

@@ -57,7 +57,7 @@ configurations.configureEach {
             details.because 'kotlin-stdlib must match the Kotlin compiler version 2.1.21'
         }
         if (details.requested.group == 'org.jetbrains.kotlinx' && details.requested.name.startsWith('kotlinx-serialization')) {
-            details.useVersion '1.8.0'
+            details.useVersion '1.7.3'
             details.because 'kotlinx-serialization must be compatible with Kotlin 2.1.x and @clerk/expo'
         }
     }

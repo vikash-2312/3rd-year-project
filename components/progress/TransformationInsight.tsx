@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import { useTheme } from '../../lib/ThemeContext';
 import { ProgressPhoto, getDayNumber } from '../../services/progressPhotoService';
+import { AchievementCard } from './AchievementCard';
 
 interface TransformationInsightProps {
   photos: ProgressPhoto[];
@@ -18,45 +19,79 @@ export function TransformationInsight({ photos, streakCount }: TransformationIns
   const lastPhoto = photos[photos.length - 1];
   const dayDiff = getDayNumber(lastPhoto, firstPhoto);
 
-  // Streak insight
-  const getStreakInsight = (): { text: string; emoji: string } => {
-    if (streakCount >= 7) return { text: `${streakCount} day streak`, emoji: '🏆' };
-    if (streakCount >= 3) return { text: `${streakCount} day streak`, emoji: '🔥' };
-    if (streakCount >= 1) return { text: `${streakCount} day streak`, emoji: '⭐' };
-    return { text: 'Log today!', emoji: '💫' };
-  };
+  const achievements = [];
 
-  // Journey insight
-  const getJourneyInsight = (): { text: string; emoji: string } => {
-    if (photos.length === 1) return { text: 'Journey started!', emoji: '🚀' };
-    if (dayDiff <= 7) return { text: `${dayDiff} days of progress`, emoji: '📈' };
-    if (dayDiff <= 30) return { text: `${Math.ceil(dayDiff / 7)} weeks tracked`, emoji: '📊' };
-    return { text: `${Math.ceil(dayDiff / 30)} months strong`, emoji: '💎' };
-  };
+  // 1. Streak Achievement
+  if (streakCount >= 7) {
+    achievements.push({
+      title: 'Consistency King',
+      subtitle: `${streakCount} day streak`,
+      emoji: '🏆',
+      color: colors.warning,
+      bg: isDark ? '#2D2914' : '#FFFFF0',
+    });
+  } else if (streakCount >= 3) {
+    achievements.push({
+      title: 'Heat Streak',
+      subtitle: `${streakCount} days active`,
+      emoji: '🔥',
+      color: colors.danger,
+      bg: isDark ? '#3B1A1A' : '#FFF5F5',
+    });
+  }
 
-  const streakInsight = getStreakInsight();
-  const journeyInsight = getJourneyInsight();
+  // 2. Photos Achievement
+  if (photos.length >= 10) {
+    achievements.push({
+      title: 'Archive Master',
+      subtitle: '10+ photos logged',
+      emoji: '📸',
+      color: colors.accent,
+      bg: isDark ? '#1C3829' : '#F0FFF4',
+    });
+  } else if (photos.length >= 1) {
+    achievements.push({
+      title: 'Journey Hero',
+      subtitle: 'First step taken',
+      emoji: '🚀',
+      color: colors.blue,
+      bg: isDark ? '#1A2A3B' : '#EBF8FF',
+    });
+  }
 
-  const insights = [
-    { ...streakInsight, color: isDark ? '#FC8181' : '#E53E3E', bg: isDark ? '#3B1A1A' : '#FFF5F5' },
-    { ...journeyInsight, color: isDark ? '#63B3ED' : '#3182CE', bg: isDark ? '#1A2A3B' : '#EBF8FF' },
-  ];
+  // 3. Time Achievement
+  if (dayDiff >= 30) {
+    achievements.push({
+      title: 'Month Strong',
+      subtitle: '30+ days tracked',
+      emoji: '💎',
+      color: colors.purple,
+      bg: isDark ? '#2D2140' : '#F8F4FF',
+    });
+  } else if (dayDiff >= 7) {
+    achievements.push({
+      title: 'Week 1 Done',
+      subtitle: '7 days of progress',
+      emoji: '📈',
+      color: colors.blue,
+      bg: isDark ? '#14292F' : '#F0FBFF',
+    });
+  }
 
   return (
     <View style={styles.container}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>Transformation Insights</Text>
-      <View style={styles.pillsRow}>
-        {insights.map((insight, index) => (
-          <Animated.View
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>Your Achievements</Text>
+      <View style={styles.badgeGrid}>
+        {achievements.map((item, index) => (
+          <AchievementCard
             key={index}
-            entering={FadeInDown.delay(index * 100).duration(400)}
-            style={[styles.pill, { backgroundColor: insight.bg }]}
-          >
-            <Text style={styles.pillEmoji}>{insight.emoji}</Text>
-            <Text style={[styles.pillText, { color: insight.color }]} numberOfLines={1}>
-              {insight.text}
-            </Text>
-          </Animated.View>
+            index={index}
+            title={item.title}
+            subtitle={item.subtitle}
+            emoji={item.emoji}
+            color={item.color}
+            bgColor={item.bg}
+          />
         ))}
       </View>
     </View>
@@ -65,34 +100,17 @@ export function TransformationInsight({ photos, streakCount }: TransformationIns
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: 20,
+    marginTop: 24,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '800',
-    marginBottom: 12,
+    marginBottom: 16,
     letterSpacing: -0.3,
   },
-  pillsRow: {
+  badgeGrid: {
     flexDirection: 'row',
-    gap: 8,
-  },
-  pill: {
-    flex: 1,
-    flexDirection: 'column',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-    borderRadius: 18,
-    gap: 6,
-  },
-  pillEmoji: {
-    fontSize: 20,
-  },
-  pillText: {
-    fontSize: 11,
-    fontWeight: '800',
-    textAlign: 'center',
-    letterSpacing: 0.2,
+    flexWrap: 'wrap',
+    gap: 12,
   },
 });
