@@ -8,6 +8,7 @@ import {
   // @ts-ignore
   experimentalForceLongPolling
 } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -26,17 +27,23 @@ const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 });
 
-export const saveUserToFirestore = async (userId: string, email: string, name: string) => {
+export const saveUserToFirestore = async (userId: string, email: string, name?: string) => {
   try {
     const userRef = doc(db, "users", userId);
     
-    // Using setDoc with merge: true is often safer and more direct than getDoc + setDoc
-    await setDoc(userRef, {
+    // Only set the name if it's provided and not an empty string
+    // to avoid overwriting existing data with empty strings during background syncs
+    const updateData: any = {
       email,
-      name,
       updatedAt: new Date(),
-      createdAt: new Date(), // This will be overwritten if mergin, or we can use serverTimestamp
-    }, { merge: true });
+    };
+
+    if (name && name.trim() !== '') {
+      updateData.name = name;
+    }
+
+    // Using setDoc with merge: true is safer than getDoc + setDoc
+    await setDoc(userRef, updateData, { merge: true });
 
     console.log("User successfully saved to Firestore");
   } catch (error) {
@@ -46,3 +53,7 @@ export const saveUserToFirestore = async (userId: string, email: string, name: s
 };
 
 export { db };
+
+// Firebase Storage (DEPRECATED - Moved to Supabase)
+// const storage = getStorage(app);
+// export { storage };

@@ -1,20 +1,16 @@
-import { PencilEdit02Icon } from '@hugeicons/core-free-icons';
-import { HugeiconsIcon } from '@hugeicons/react-native';
-import { router } from 'expo-router';
 import React from 'react';
-import { Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Image, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../lib/ThemeContext';
 
 type WaterCardProps = {
   targetLiters: number;
   consumedLiters: number;
-  onEditPress?: () => void;
 };
 
-export function WaterCard({ targetLiters, consumedLiters, onEditPress }: WaterCardProps) {
+export function WaterCard({ targetLiters, consumedLiters }: WaterCardProps) {
   const { colors } = useTheme();
   const GLASS_VOLUME_L = 0.25;
-  const MAX_GLASSES = 16;
+  const MAX_GLASSES = 9;
   
   const totalTargetGlasses = Math.ceil(targetLiters / GLASS_VOLUME_L);
   const totalConsumedGlasses = consumedLiters / GLASS_VOLUME_L;
@@ -56,12 +52,9 @@ export function WaterCard({ targetLiters, consumedLiters, onEditPress }: WaterCa
             {Math.round(consumedLiters * 1000)}ml / {Math.round(targetLiters * 1000)}ml
           </Text>
         </View>
-        <TouchableOpacity style={styles.editButton} onPress={onEditPress}>
-          <HugeiconsIcon icon={PencilEdit02Icon} size={20} color={colors.accent} />
-        </TouchableOpacity>
       </View>
 
-      <View style={styles.glassesContainer}>
+      <View style={styles.glassesRow}>
         {renderGlasses()}
       </View>
 
@@ -78,6 +71,9 @@ export function WaterCard({ targetLiters, consumedLiters, onEditPress }: WaterCa
   );
 }
 
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const GLASS_SIZE = (SCREEN_WIDTH - 48 - 40 - 64) / 9; // screen - card margin - card padding - gaps
+
 const styles = StyleSheet.create({
   cardContainer: {
     backgroundColor: '#FFFFFF',
@@ -85,7 +81,6 @@ const styles = StyleSheet.create({
     padding: 20,
     marginHorizontal: 24,
     marginTop: 16,
-    // Soft shadow for elevation
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
@@ -96,7 +91,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -105,7 +100,7 @@ const styles = StyleSheet.create({
   titleText: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#2D3748', // Black/Dark gray matches the Calories card
+    color: '#2D3748',
   },
   intakeText: {
     fontSize: 16,
@@ -113,19 +108,15 @@ const styles = StyleSheet.create({
     color: '#718096',
     marginLeft: 8,
   },
-  editButton: {
-    padding: 4,
-  },
-  glassesContainer: {
+  glassesRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-start',
-    gap: 8,
-    marginBottom: 20,
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: 16,
   },
   glassIcon: {
-    width: (Dimensions.get('window').width - 150) / 8, 
-    height: 42,
+    width: GLASS_SIZE,
+    height: 40,
   },
   emptyGlass: {
     opacity: 0.1, 
@@ -147,3 +138,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   }
 });
+

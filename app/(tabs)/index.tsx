@@ -1,29 +1,31 @@
 import { useUser } from "@clerk/expo";
-import { collection, doc, getDoc, limit, onSnapshot, query, where } from "firebase/firestore";
-import { useEffect, useState, useRef } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
+import { collection, doc, getDoc, limit, onSnapshot, query, where, deleteDoc } from "firebase/firestore";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, ScrollView, StyleSheet, View, Text, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { format } from "date-fns";
-import { Button } from "../../components/Button";
-import { CaloriesCard, CaloriesCardRef } from "../../components/CaloriesCard";
+import { format, isToday as isDateToday } from "date-fns";
+import * as Haptics from 'expo-haptics';
+import { CaloriesCard } from "../../components/CaloriesCard";
 import { HomeHeader } from "../../components/HomeHeader";
 import { RecentActivity } from "../../components/RecentActivity";
 import { WaterCard } from "../../components/WaterCard";
 import { WeeklyCalendar } from "../../components/WeeklyCalendar";
 import { HealthScoreCard } from "../../components/HealthScoreCard";
+import { useRouter } from "expo-router";
+
 import { db } from "../../lib/firebase";
 import { useTheme } from "../../lib/ThemeContext";
 
 export default function Home() {
   const { user } = useUser();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const router = useRouter();
 
   const [userData, setUserData] = useState<any>(null);
   const [logs, setLogs] = useState<any[]>([]);
   const [isLoadingProps, setIsLoadingProps] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  
-  const caloriesCardRef = useRef<CaloriesCardRef>(null);
+  const [latestWeight, setLatestWeight] = useState<number | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -90,7 +92,25 @@ export default function Home() {
       console.error("Firestore Snapshot Error:", error);
     });
 
-    return () => unsubscribe();
+    // 3. Fetch Latest Weight Log
+    const weightQuery = query(
+      collection(db, 'weight_logs'),
+      where('userId', '==', user.id)
+    );
+
+    const unsubscribeWeight = onSnapshot(weightQuery, (snapshot) => {
+      if (!snapshot.empty) {
+        // Sort in JS to avoid index requirement
+        const logs = snapshot.docs.map(doc => doc.data());
+        logs.sort((a, b) => b.date.localeCompare(a.date));
+        setLatestWeight(logs[0].weightKg);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeWeight();
+    };
   }, [user, selectedDate]);
 
   // Aggregate macros from logs
@@ -113,6 +133,31 @@ export default function Home() {
 
   const consumedWaterLiters = consumedMacros.water;
 
+    const handleDeleteLog = async (id: string, name: string) => {
+    Alert.alert(
+      "Delete Activity",
+      `Are you sure you want to delete "${name}"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive", 
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, 'logs', id));
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch (error) {
+              console.error("Error deleting log:", error);
+              Alert.alert("Error", "Failed to delete activity. Please try again.");
+            }
+          } 
+        },
+      ]
+    );
+  };
+
+  const isToday = isDateToday(selectedDate);
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -124,7 +169,6 @@ export default function Home() {
         ) : (
           <>
             <CaloriesCard
-              ref={caloriesCardRef}
               targetCalories={dailyCalories}
               targetProtein={targets.proteinGrams || 150}
               targetCarbs={targets.carbsGrams || 200}
@@ -139,11 +183,11 @@ export default function Home() {
             <WaterCard
               targetLiters={targetWaterLiters}
               consumedLiters={consumedWaterLiters}
-              onEditPress={() => caloriesCardRef.current?.openEditModal()}
             />
-            
+
+
             <HealthScoreCard
-              weightKg={userData?.profile?.measurements?.weightKg || userData?.onboarding_weight || 70}
+              weightKg={latestWeight || userData?.profile?.measurements?.weightKg || userData?.onboarding_weight || 70}
               protein={consumedMacros.protein}
               carbs={consumedMacros.carbs}
               fat={consumedMacros.fats}
@@ -152,17 +196,20 @@ export default function Home() {
               caloriesConsumed={consumedMacros.calories}
               calorieGoal={dailyCalories}
             />
+
           </>
         )}
 
-        <RecentActivity activities={logs} />
+        <RecentActivity 
+          activities={logs} 
+          onDelete={handleDeleteLog}
+          isToday={isToday}
+        />
 
       </ScrollView>
     </SafeAreaView>
   );
 }
-
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -173,5 +220,69 @@ const styles = StyleSheet.create({
   content: {
     paddingBottom: 120, // padding for the floating tab bar
   },
+  journalCard: {
+    marginHorizontal: 24,
+    marginTop: 16,
+    marginBottom: 24,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  journalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  journalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  journalIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  journalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  journalPreview: {
+    gap: 8,
+  },
+  moodBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    gap: 6,
+  },
+  moodText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  journalEntry: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontStyle: 'italic',
+  },
+  journalEmpty: {
+    paddingVertical: 4,
+  },
+  journalEmptyText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
 });
-

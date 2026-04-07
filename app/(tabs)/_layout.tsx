@@ -1,6 +1,7 @@
 import {
   Add01Icon,
   Analytics01Icon,
+  Camera02Icon,
   Cancel01Icon,
   DropletIcon,
   Dumbbell01Icon,
@@ -50,9 +51,10 @@ function TabsLayout() {
         router.push('/log-exercise');
       } else if (option === 'Add Drink Water') {
         router.push('/log-water');
+      } else if (option === 'Progress Photo') {
+        pickProgressPhoto();
       } else {
         console.log(`[FAB] Other option: ${option}`);
-        // TODO: Navigate to the relevant screen for each option
       }
     }, 300);
   };
@@ -109,6 +111,38 @@ function TabsLayout() {
         alert('Image Picker is not available in Expo Go. Please use a development build to scan food.');
       } else {
         console.error("Error picking image:", error);
+        alert('Failed to pick image. Please try again.');
+      }
+    }
+  };
+
+  const pickProgressPhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        alert('Sorry, we need media library permissions to add progress photos!');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: 'images',
+        allowsEditing: true,
+        aspect: [3, 4],
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const imageUri = result.assets[0].uri;
+        router.push({
+          pathname: '/add-progress-photo',
+          params: { imageUri: encodeURIComponent(imageUri) },
+        });
+      }
+    } catch (error: any) {
+      if (error?.message?.includes('native module')) {
+        alert('Image Picker is not available in Expo Go. Please use a development build.');
+      } else {
+        console.error('Error picking progress photo:', error);
         alert('Failed to pick image. Please try again.');
       }
     }
@@ -240,6 +274,17 @@ function TabsLayout() {
                   <HugeiconsIcon icon={ScanIcon} size={24} color={colors.accent} />
                 </View>
                 <Text style={[styles.optionLabel, { color: colors.text }]}>Scan Food</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.optionCard, { backgroundColor: colors.card }]}
+                activeOpacity={0.7}
+                onPress={() => handleOptionPress('Progress Photo')}
+              >
+                <View style={[styles.optionIconCircle, { backgroundColor: isDark ? '#1A2A3B' : '#E0F7FA' }]}>
+                  <HugeiconsIcon icon={Camera02Icon} size={24} color={isDark ? '#4DD0E1' : '#00897B'} />
+                </View>
+                <Text style={[styles.optionLabel, { color: colors.text }]}>Progress Photo</Text>
               </TouchableOpacity>
             </View>
           </Pressable>

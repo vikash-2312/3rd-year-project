@@ -1,12 +1,14 @@
 import { useClerk, useOAuth, useSignIn } from '@clerk/expo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Link, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
+import { doc, getDocFromServer, collection, query, where, getDocs, setDoc } from 'firebase/firestore';
 import React from 'react';
 import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Button } from '../../components/Button';
 import { InputField } from '../../components/InputField';
 import { useWarmUpBrowser } from '../../hooks/useWarmUpBrowser';
-import { saveUserToFirestore } from '../../lib/firebase';
+import { db } from '../../lib/firebase';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -60,10 +62,10 @@ const formatError = (err: any) => {
     if (err.name === 'TypeError') return `System Error: ${err.message}`;
 
     if (err.message && typeof err.message === 'string') {
-       if (err.message.includes('Identifier is invalid.')) {
-         return 'Invalid email or password. Please try again.';
-       }
-       return err.message;
+      if (err.message.includes('Identifier is invalid.')) {
+        return 'Invalid email or password. Please try again.';
+      }
+      return err.message;
     }
 
     const combined = { ...detail, ...err };
@@ -76,7 +78,8 @@ const formatError = (err: any) => {
 export default function SignIn() {
   useWarmUpBrowser();
   const signInResult = useSignIn() as any;
-  const { setActive } = useClerk();
+  const clerk = useClerk();
+  const setActive = clerk.setActive;
 
   // Handle Signal API: favor the object that has the methods (create, etc.)
   const isLoaded = signInResult?.isLoaded ?? !!signInResult?.signIn;
@@ -106,15 +109,18 @@ export default function SignIn() {
     const currentStatus = res?.status || si?.status;
     console.log('[SignIn] Status check for preparation:', currentStatus);
 
-    if (currentStatus === 'needs_client_trust' || currentStatus === 'needs_second_factor') {
+    if (currentStatus === 'needs_client_trust' || currentStatus === 'needs_second_factor' || currentStatus === 'needs_first_factor') {
       const isSecondFactor = currentStatus === 'needs_second_factor';
-      console.log(`[SignIn] Handling ${isSecondFactor ? 'MFA' : 'Client Trust'} flow. Finding prep method...`);
+      console.log(`[SignIn] Handling ${currentStatus} flow. Finding prep method...`);
 
       const prepareMethod = findClerkMethod(res, ['prepareSecondFactor', 'prepareFirstFactor', 'prepareMFA', 'prepare', 'sendEmailCode', 'sendPhoneCode', 'create'])
         || findClerkMethod(si, ['prepareSecondFactor', 'prepareFirstFactor', 'prepareMFA', 'prepare', 'sendEmailCode', 'sendPhoneCode', 'create'])
         || findClerkMethod(signInResult, ['prepareSecondFactor', 'prepareFirstFactor', 'prepareMFA', 'prepare', 'sendEmailCode', 'sendPhoneCode', 'create']);
 
-      const supportedFactors = res?.supportedSecondFactors || si?.supportedSecondFactors || [];
+      const supportedFactors = (currentStatus === 'needs_first_factor')
+        ? (res?.supportedFirstFactors || si?.supportedFirstFactors || [])
+        : (res?.supportedSecondFactors || si?.supportedSecondFactors || []);
+
       const factor = supportedFactors[0];
 
       if (factor) {
@@ -147,7 +153,7 @@ export default function SignIn() {
     }
     return false;
   };
-
+  //
   const handleSubmit = async () => {
     if (!signIn) return;
     setIsLoading(true);
@@ -189,6 +195,15 @@ export default function SignIn() {
       setIsLoading(false);
     }
   };
+  // Helper: wait for clerk.user to hydrate after setActive (polls up to 3s)
+  const waitForClerkUser = async (maxMs = 3000): Promise<string | null> => {
+    const start = Date.now();
+    while (Date.now() - start < maxMs) {
+      if (clerk.user?.id) return clerk.user.id;
+      await new Promise(r => setTimeout(r, 150));
+    }
+    return clerk.user?.id || null;
+  };
 
   const handleSignInCompletion = async (result: any) => {
     const si = signIn as any;
@@ -197,42 +212,149 @@ export default function SignIn() {
 
     console.log('[SignIn] Sign-in complete, activating session:', sessionId);
 
-    try {
-      const email = currentResult?.identifier || si?.identifier || emailAddress.trim().toLowerCase();
-      const userId = currentResult?.createdUserId || si?.createdUserId || si?.userId;
-      if (userId) {
-        await saveUserToFirestore(userId, email, '');
-      }
-    } catch (fbErr) {
-      console.error('[SignIn] Firestore sync failed:', fbErr);
+    if (!sessionId) {
+      Alert.alert('Error', 'Session ID not found after completion.');
+      return;
     }
 
-    if (sessionId) {
-      // Support finalize if it exists (newer SDKs)
-      const finalizeMethod = findClerkMethod(si, ['finalize']) || findClerkMethod(signInResult, ['finalize']);
-      if (finalizeMethod) {
+    // Support finalize if it exists (newer SDKs)
+    const finalizeMethod = findClerkMethod(si, ['finalize']) || findClerkMethod(signInResult, ['finalize']);
+    if (finalizeMethod) {
+      try {
+        await finalizeMethod();
+        console.log('[SignIn] Finalize complete');
+      } catch (fErr) {
+        console.log('[SignIn] Finalize failed (non-critical):', fErr);
+      }
+    }
+
+    try {
+      // Set a flag to tell index.tsx to NOT interfere with this sign-in's routing
+      await AsyncStorage.setItem('is_signing_in', 'true');
+      
+      await setActive({ session: sessionId });
+      console.log('[SignIn] Session activated successfully.');
+
+      // Wait for Clerk to hydrate the user object after session activation
+      const hydratedUserId = await waitForClerkUser();
+
+      // Fallback chain for user ID if hydration didn't yield one
+      const activeClerkSession = clerk.client?.sessions?.find((s: any) => s.id === sessionId);
+      const activeUserId =
+        hydratedUserId ||
+        activeClerkSession?.user?.id ||
+        currentResult?.createdUserId ||
+        si?.createdUserId ||
+        currentResult?.userData?.id ||
+        si?.userData?.id;
+
+      console.log('[SignIn] Resolved User ID:', activeUserId);
+
+      let routeHref = '/';
+
+      if (activeUserId) {
         try {
-          console.log('[SignIn] Calling finalize...');
-          await finalizeMethod();
-          console.log('[SignIn] Finalize complete');
-        } catch (fErr) {
-          console.log('[SignIn] Finalize failed (non-critical):', fErr);
+          // 1. Fast path: check local storage first
+          const hasOnboardedLocal = await AsyncStorage.getItem(`has_onboarded_${activeUserId}`);
+          console.log('[SignIn] Local onboarding status:', hasOnboardedLocal);
+
+          if (hasOnboardedLocal === 'true') {
+            console.log('[SignIn] Onboarded locally, redirecting to tabs');
+            routeHref = '/(tabs)';
+          } else {
+            // 2. Slow path: check Firestore (server fetch to avoid stale cache)
+            const userRef = doc(db, 'users', activeUserId);
+            const userDoc = await getDocFromServer(userRef);
+            console.log('[SignIn] Firestore doc exists:', userDoc.exists());
+
+            const checkOnboardingData = (data: any) => {
+              if (!data) return false;
+              const keys = Object.keys(data);
+              return data.hasOnboarded === true ||
+                data.onboardingCompleted === true ||
+                keys.some((k: string) =>
+                  k.includes('onboarding') ||
+                  k === 'profile' ||
+                  k === 'gender' ||
+                  k === 'weight'
+                );
+            };
+
+            let profileFound = false;
+
+            if (userDoc.exists() && checkOnboardingData(userDoc.data())) {
+              // Doc found with complete profile under current user ID
+              console.log('[SignIn] Profile complete under current user ID');
+              await AsyncStorage.setItem(`has_onboarded_${activeUserId}`, 'true');
+              profileFound = true;
+            } else {
+              // 3. Fallback: Check for completed profiles matching the user's email
+              let extractedEmail = '';
+              try {
+                const cUser = clerk.user as any;
+                extractedEmail = cUser?.primaryEmailAddress?.emailAddress || 
+                                 cUser?.emailAddresses?.[0]?.emailAddress || 
+                                 currentResult?.identifier || 
+                                 si?.identifier || 
+                                 si?.userData?.emailAddress || 
+                                 si?.supportedFirstFactors?.find((f:any) => f.emailAddress)?.emailAddress ||
+                                 si?.firstFactorVerification?.emailAddress || 
+                                 emailAddress;
+              } catch (e) {
+                console.error('[SignIn] Failed to extract email:', e);
+              }
+              
+              const userEmail = extractedEmail?.trim().toLowerCase();
+              console.log('[SignIn] Profile lacking on current ID. Trying email fallback for:', userEmail);
+
+              if (userEmail) {
+                try {
+                  const usersRef = collection(db, 'users');
+                  const q = query(usersRef, where('email', '==', userEmail.toLowerCase()));
+                  const snap = await getDocs(q);
+
+                  for (const docSnap of snap.docs) {
+                    if (docSnap.id !== activeUserId && checkOnboardingData(docSnap.data())) {
+                      // Found older profile — migrate it
+                      console.log('[SignIn] Found profile under old ID:', docSnap.id, '→ migrating to', activeUserId);
+                      const oldData = docSnap.data();
+                      await setDoc(doc(db, 'users', activeUserId), oldData, { merge: true });
+                      await AsyncStorage.setItem(`has_onboarded_${activeUserId}`, 'true');
+                      profileFound = true;
+                      break; // Stop after migrating the first valid profile found
+                    }
+                  }
+                } catch (emailErr) {
+                  console.error('[SignIn] Email-based lookup failed:', formatError(emailErr));
+                }
+              }
+            }
+
+            // 4. Final routing decision
+            if (profileFound) {
+              routeHref = '/(tabs)';
+            } else {
+              console.log('[SignIn] No onboarding data found anywhere, routing to onboarding');
+              routeHref = '/(onboarding)/1';
+            }
+          }
+        } catch (storageErr) {
+          console.error('[SignIn] Storage/Firestore check failed:', formatError(storageErr));
+          routeHref = '/';
         }
+      } else {
+        console.warn('[SignIn] Could not resolve user ID, falling back to index hub');
+        routeHref = '/';
       }
 
-      console.log('[SignIn] Setting session active:', sessionId);
-      try {
-        await setActive({ session: sessionId });
-        console.log('[SignIn] Session activated successfully. Navigating to /');
-        router.replace('/');
-        console.log('[SignIn] router.replace called');
-      } catch (activeErr) {
-        console.error('[SignIn] setActive failed:', formatError(activeErr));
-        Alert.alert('Activation Error', formatError(activeErr));
-      }
-    } else {
-      console.error('[SignIn] No sessionId found in result or signIn object');
-      Alert.alert('Error', 'Session ID not found after completion.');
+      // Clear the sign-in routing lock and navigate
+      await AsyncStorage.removeItem('is_signing_in');
+      console.log('[SignIn] Navigating to:', routeHref);
+      router.replace(routeHref as any);
+    } catch (activeErr) {
+      await AsyncStorage.removeItem('is_signing_in');
+      console.error('[SignIn] setActive failed:', formatError(activeErr));
+      Alert.alert('Activation Error', formatError(activeErr));
     }
   };
 
@@ -266,19 +388,21 @@ export default function SignIn() {
         throw new Error('Verification method not found.');
       }
 
+      let actualResult = result;
       if (result && 'result' in result) {
         if (result.error && result.error !== 'null') throw result.error;
-        result = result.result;
+        actualResult = result.result;
       }
 
-      const currentStatus = (result as any)?.status || (si as any)?.status;
+      const currentStatus = actualResult?.status || si?.status;
       console.log('[SignIn] Verification result status:', currentStatus);
 
       if (currentStatus === 'complete') {
-        await handleSignInCompletion(result);
-      } else if (currentStatus === 'needs_second_factor' || currentStatus === 'needs_client_trust') {
+        console.log('[SignIn] Verification complete, calling handleSignInCompletion');
+        await handleSignInCompletion(actualResult);
+      } else if (currentStatus === 'needs_second_factor' || currentStatus === 'needs_first_factor' || currentStatus === 'needs_client_trust') {
         console.log('[SignIn] Transitioning to next factor...');
-        await prepareFactorIfNeeded(result);
+        await prepareFactorIfNeeded(actualResult);
       } else {
         console.error('[SignIn] Unexpected status:', currentStatus);
         Alert.alert('Verification Incomplete', `Status: ${currentStatus}`);

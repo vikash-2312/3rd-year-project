@@ -1,10 +1,10 @@
-import React from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { useUser } from '@clerk/expo';
-import { useRouter } from 'expo-router';
-import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Notification01Icon } from '@hugeicons/core-free-icons';
-import { collection, onSnapshot, query, where, limit } from 'firebase/firestore';
+import { HugeiconsIcon } from '@hugeicons/react-native';
+import { useRouter } from 'expo-router';
+import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
+import React from 'react';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { db } from '../lib/firebase';
 import { useTheme } from '../lib/ThemeContext';
 
@@ -37,7 +37,7 @@ export function HomeHeader() {
           <Image source={{ uri: imageUrl }} style={styles.avatar} />
         ) : (
           <View style={styles.avatarPlaceholder}>
-             <Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text>
+            <Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text>
           </View>
         )}
         <View style={styles.textContainer}>
@@ -46,7 +46,7 @@ export function HomeHeader() {
         </View>
       </View>
 
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[styles.notificationButton, { backgroundColor: colors.card }]}
         onPress={() => router.push('/notifications' as any)}
       >
@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 24,
     paddingTop: 16,
-    paddingBottom: 16,
+    paddingBottom: 8,
   },
   profileSection: {
     flexDirection: 'row',

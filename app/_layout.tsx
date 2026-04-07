@@ -1,9 +1,10 @@
-import { ClerkProvider, ClerkLoaded, useAuth } from '@clerk/expo';
-import { Stack, useSegments, Redirect } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
+import { ClerkLoaded, ClerkProvider, useAuth } from '@clerk/expo';
 import * as Notifications from 'expo-notifications';
-import { useEffect, useRef } from 'react';
-import { registerForPushNotificationsAsync, scheduleDailyReminders, saveNotificationHistory, seedAdminSettings, seedWelcomeNotification } from '../lib/notifications';
+import { Redirect, Stack, useSegments } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
+import { useEffect } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { registerForPushNotificationsAsync, saveNotificationHistory, scheduleDailyReminders, seedAdminSettings, seedWelcomeNotification } from '../lib/notifications';
 
 const tokenCache = {
   async getToken(key: string) {
@@ -29,9 +30,9 @@ if (!publishableKey) {
   throw new Error('Missing Publishable Key. Please set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY in your .env');
 }
 
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 import { useUser } from '@clerk/expo';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { ThemeProvider } from '../lib/ThemeContext';
 
 const InitialLayout = () => {
@@ -52,7 +53,7 @@ const InitialLayout = () => {
       }).catch(err => {
         console.error('[Notifications] Registration error:', err);
       });
-      
+
       // 2. Fetch User Preferences, and Schedule local reminders
       getDoc(doc(db, 'users', user.id, 'settings', 'preferences')).then(prefSnap => {
         const prefs = prefSnap.data();
@@ -71,8 +72,8 @@ const InitialLayout = () => {
       const notificationSubscription = Notifications.addNotificationReceivedListener(notification => {
         console.log('[Notifications] Received:', notification);
         saveNotificationHistory(
-          user.id, 
-          notification.request.content.title || 'Notification', 
+          user.id,
+          notification.request.content.title || 'Notification',
           notification.request.content.body || ''
         );
       });
@@ -90,9 +91,10 @@ const InitialLayout = () => {
 
   const inAuthGroup = segments[0] === '(auth)';
 
-  if (isSignedIn && inAuthGroup) {
-    return <Redirect href="/" />;
-  }
+  // Allow sign-in / sign-up auth components to manage their own success redirects instead of forcefully aborting their navigation
+  // if (isSignedIn && inAuthGroup) {
+  //   return <Redirect href="/" />;
+  // }
 
   if (!isSignedIn && !inAuthGroup) {
     return <Redirect href="/welcome" />;
@@ -100,44 +102,53 @@ const InitialLayout = () => {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(auth)" />
       <Stack.Screen name="(onboarding)" />
+      <Stack.Screen name="(auth)" />
+
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="index" />
-      <Stack.Screen 
-        name="food-search" 
-        options={{ 
+      <Stack.Screen
+        name="food-search"
+        options={{
           animation: 'slide_from_bottom',
           presentation: 'modal',
-        }} 
+        }}
       />
-      <Stack.Screen 
-        name="log-food" 
-        options={{ 
+      <Stack.Screen
+        name="log-food"
+        options={{
           animation: 'slide_from_bottom',
           presentation: 'modal',
-        }} 
+        }}
       />
-      <Stack.Screen 
-        name="log-water" 
-        options={{ 
+      <Stack.Screen
+        name="log-water"
+        options={{
           animation: 'slide_from_bottom',
           presentation: 'modal',
-        }} 
+        }}
       />
-      <Stack.Screen 
-        name="preferences" 
-        options={{ 
+      <Stack.Screen
+        name="preferences"
+        options={{
           animation: 'slide_from_right',
           headerShown: false,
-        }} 
+        }}
       />
-      <Stack.Screen 
-        name="notifications" 
-        options={{ 
+      <Stack.Screen
+        name="notifications"
+        options={{
+          animation: 'slide_from_right',
+          presentation: 'modal',
+        }}
+      />
+      <Stack.Screen
+        name="add-progress-photo"
+        options={{
           animation: 'slide_from_bottom',
           presentation: 'modal',
-        }} 
+          headerShown: false,
+        }}
       />
     </Stack>
   );
@@ -148,7 +159,9 @@ export default function RootLayout() {
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
       <ClerkLoaded>
         <ThemeProvider>
-          <InitialLayout />
+          <GestureHandlerRootView style={{ flex: 1 }}>
+            <InitialLayout />
+          </GestureHandlerRootView>
         </ThemeProvider>
       </ClerkLoaded>
     </ClerkProvider>
