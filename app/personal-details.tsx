@@ -62,6 +62,7 @@ import Animated, {
   withTiming
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import { parse, differenceInYears, isValid, format, subYears } from 'date-fns';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -94,7 +95,9 @@ export default function PersonalDetails() {
 
   // Form State
   const [fullName, setFullName] = useState('');
-  const [age, setAge] = useState('');
+  const [birthDay, setBirthDay] = useState('');
+  const [birthMonth, setBirthMonth] = useState('');
+  const [birthYear, setBirthYear] = useState('');
   const [weight, setWeight] = useState('');
   const [heightFt, setHeightFt] = useState('');
   const [heightIn, setHeightIn] = useState('');
@@ -123,7 +126,23 @@ export default function PersonalDetails() {
           const data = userSnap.data().profile || {};
           
           setFullName(userSnap.data().display_name || user?.fullName || '');
-          setAge(data.age?.toString() || '');
+          
+          // --- Birthdate Migration & Loading ---
+          if (data.birthdate) {
+            const dbDate = parse(data.birthdate, 'yyyy-MM-dd', new Date());
+            if (isValid(dbDate)) {
+              setBirthDay(format(dbDate, 'dd'));
+              setBirthMonth(format(dbDate, 'MM'));
+              setBirthYear(format(dbDate, 'yyyy'));
+            }
+          } else if (data.age) {
+            // Migration: Guess birthdate from age
+            const guessedYear = new Date().getFullYear() - parseInt(data.age);
+            setBirthDay('01');
+            setBirthMonth('01');
+            setBirthYear(guessedYear.toString());
+          }
+
           setWeight(data.measurements?.weightKg?.toString() || '');
           setHeightFt(data.measurements?.heightFt?.toString() || '');
           setHeightIn(data.measurements?.heightIn?.toString() || '');
@@ -154,7 +173,11 @@ export default function PersonalDetails() {
     const weightKg = parseFloat(weight);
     const totalInches = ((parseInt(heightFt) || 0) * 12) + (parseInt(heightIn) || 0);
     const heightCm = totalInches * 2.54;
-    const userAge = parseInt(age) || 25;
+    
+    // Calculate live age from birthdate bits
+    const dateStr = `${birthYear}-${birthMonth.padStart(2, '0')}-${birthDay.padStart(2, '0')}`;
+    const parsed = parse(dateStr, 'yyyy-MM-dd', new Date());
+    const userAge = isValid(parsed) ? differenceInYears(new Date(), parsed) : 25;
 
     if (!weightKg || !heightCm || !userAge || !gender) return null;
 
@@ -169,8 +192,8 @@ export default function PersonalDetails() {
     const goalObj = GOALS.find(g => g.id === goal);
     const suggested = tdee + (goalObj?.offset || 0);
 
-    return { bmr: Math.round(bmr), tdee, suggested };
-  }, [weight, heightFt, heightIn, age, gender, activityLevel, goal]);
+    return { bmr: Math.round(bmr), tdee, suggested, currentAge: userAge };
+  }, [weight, heightFt, heightIn, birthDay, birthMonth, birthYear, gender, activityLevel, goal]);
 
   const handlePickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -248,12 +271,22 @@ export default function PersonalDetails() {
 
   const handleSave = async () => {
     if (!user) return;
+    
+    const birthdate = `${birthYear}-${birthMonth.padStart(2, '0')}-${birthDay.padStart(2, '0')}`;
+    const parsedDate = parse(birthdate, 'yyyy-MM-dd', new Date());
+    
+    if (!isValid(parsedDate)) {
+      Alert.alert('Invalid Date', 'Please check your birthdate.');
+      return;
+    }
+
     setIsSaving(true);
     try {
       const userRef = doc(db, 'users', user.id);
       await updateDoc(userRef, {
         'display_name': fullName,
-        'profile.age': parseInt(age) || 0,
+        'profile.birthdate': birthdate,
+        'profile.age': liveStats?.currentAge || 0, // Keep age for simple sorting/filtering but birthdate is source
         'profile.measurements.weightKg': parseFloat(weight) || 0,
         'profile.measurements.heightFt': parseInt(heightFt) || 0,
         'profile.measurements.heightIn': parseInt(heightIn) || 0,
@@ -389,12 +422,44 @@ export default function PersonalDetails() {
             
             {renderInput('Full Name', fullName, setFullName, 'Your Identity', 'default')}
             
-            <View style={styles.row}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                {renderInput('Biological Age', age, setAge, '25', 'number-pad')}
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Biological Birthdate</Text>
+              <View style={styles.birthdateRow}>
+                <TextInput
+                  style={[styles.birthdateInput, { backgroundColor: colors.inputBg || (isDark ? '#222' : '#F7F7F7'), borderColor: colors.border, color: colors.text }]}
+                  placeholder="Day"
+                  value={birthDay}
+                  onChangeText={setBirthDay}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                />
+                <TextInput
+                  style={[styles.birthdateInput, { backgroundColor: colors.inputBg || (isDark ? '#222' : '#F7F7F7'), borderColor: colors.border, color: colors.text }]}
+                  placeholder="Month"
+                  value={birthMonth}
+                  onChangeText={setBirthMonth}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                />
+                <TextInput
+                  style={[styles.birthdateInput, { flex: 1.5, backgroundColor: colors.inputBg || (isDark ? '#222' : '#F7F7F7'), borderColor: colors.border, color: colors.text }]}
+                  placeholder="Year"
+                  value={birthYear}
+                  onChangeText={setBirthYear}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                />
               </View>
+              {liveStats?.currentAge && (
+                <Text style={{ fontSize: 12, color: colors.accent, fontWeight: '700', marginTop: 4, marginLeft: 4 }}>
+                  Calculated Intensity Age: {liveStats.currentAge}
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.row}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Gender</Text>
+                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Gender Orientation</Text>
                 <View style={styles.genderRow}>
                   {['male', 'female'].map(g => (
                     <TouchableOpacity 
@@ -562,4 +627,6 @@ const styles = StyleSheet.create({
   tickerValue: { fontSize: 18, fontWeight: '900' },
   tickerUnit: { fontSize: 12, fontWeight: '600', opacity: 0.5 },
   tickerDivider: { width: 1, height: 30, backgroundColor: 'rgba(0,0,0,0.05)', marginHorizontal: 12 },
+  birthdateRow: { flexDirection: 'row', gap: 10 },
+  birthdateInput: { height: 56, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, fontSize: 15, fontWeight: '700', textAlign: 'center', flex: 1 },
 });

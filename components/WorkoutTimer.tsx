@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { HugeiconsIcon } from '@hugeicons/react-native';
-import { PlayIcon, PauseIcon, MultiplicationSignIcon, Timer01Icon, PlusSignIcon } from '@hugeicons/core-free-icons';
+import { PlayIcon, PauseIcon, Cancel01Icon, Timer01Icon, Add01Icon } from '@hugeicons/core-free-icons';
 import * as Haptics from 'expo-haptics';
 
 interface WorkoutTimerProps {
@@ -57,7 +57,7 @@ export const WorkoutTimer: React.FC<WorkoutTimerProps> = ({
           <HugeiconsIcon icon={Timer01Icon} size={20} color="#718096" />
           <Text style={styles.headerTitle}>Rest Timer</Text>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <HugeiconsIcon icon={MultiplicationSignIcon} size={18} color="#A0AEC0" />
+            <HugeiconsIcon icon={Cancel01Icon} size={18} color="#A0AEC0" />
           </TouchableOpacity>
         </View>
 
@@ -76,7 +76,7 @@ export const WorkoutTimer: React.FC<WorkoutTimerProps> = ({
           </TouchableOpacity>
 
           <TouchableOpacity onPress={addTime} style={styles.addBtn}>
-            <HugeiconsIcon icon={PlusSignIcon} size={20} color="#4A5568" />
+            <HugeiconsIcon icon={Add01Icon} size={20} color="#4A5568" />
             <Text style={styles.addBtnText}>+30s</Text>
           </TouchableOpacity>
         </View>

@@ -137,8 +137,6 @@ function TabsLayout() {
         setPhotoModalVisible(true);
       } else if (option === 'Log Exercise') {
         router.push('/log-exercise');
-      } else if (option === 'Add Drink Water') {
-        router.push('/log-water');
       } else if (option === 'AI Workout') {
         router.push('/ai-workout' as any);
       }
@@ -297,12 +295,6 @@ function TabsLayout() {
                 <Text style={[styles.optionLabel, { color: colors.text }]}>Log Exercise</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={[styles.optionCard, { backgroundColor: colors.card }]} onPress={() => handleOptionPress('Add Drink Water')}>
-                <View style={[styles.optionIconCircle, { backgroundColor: colors.blueLight }]}>
-                  <HugeiconsIcon icon={DropletIcon} size={24} color={colors.blue} />
-                </View>
-                <Text style={[styles.optionLabel, { color: colors.text }]}>Add Drink Water</Text>
-              </TouchableOpacity>
 
               <TouchableOpacity style={[styles.optionCard, { backgroundColor: colors.card }]} onPress={() => handleOptionPress('Food Database')}>
                 <View style={[styles.optionIconCircle, { backgroundColor: isDark ? '#3B2A1A' : '#FFFBEB' }]}>

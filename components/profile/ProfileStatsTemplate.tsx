@@ -19,6 +19,7 @@ interface ProfileStatsTemplateProps {
   calorieLabel?: string;
   days: number;
   logs: number;
+  theme?: 'emerald' | 'midnight' | 'arctic';
 }
 
 export const ProfileStatsTemplate: React.FC<ProfileStatsTemplateProps> = ({ 
@@ -27,74 +28,113 @@ export const ProfileStatsTemplate: React.FC<ProfileStatsTemplateProps> = ({
   calories, 
   calorieLabel = 'Kcal Burned',
   days, 
-  logs 
+  logs,
+  theme = 'emerald'
 }) => {
+  const themeStyles: Record<string, {
+    grad: readonly [string, string, ...string[]];
+    accent: string;
+    badge: string;
+    text: string;
+    muted: string;
+    cardBg: string;
+    border: string;
+    btnBg: string;
+    btnText: string;
+  }> = {
+    emerald: {
+      grad: ['#009050', '#004D2B'],
+      accent: '#FFF',
+      badge: '#009050',
+      text: '#FFF',
+      muted: 'rgba(255,255,255,0.7)',
+      cardBg: 'rgba(255,255,255,0.1)',
+      border: 'rgba(255,255,255,0.1)',
+      btnBg: '#FFF',
+      btnText: '#009050'
+    },
+    midnight: {
+      grad: ['#1A202C', '#000000'],
+      accent: '#F6E05E', // Gold
+      badge: '#000',
+      text: '#FFF',
+      muted: 'rgba(255,255,255,0.6)',
+      cardBg: 'rgba(255,255,255,0.05)',
+      border: 'rgba(246, 224, 94, 0.2)',
+      btnBg: '#F6E05E',
+      btnText: '#000'
+    },
+    arctic: {
+      grad: ['#F7FAFC', '#E2E8F0'],
+      accent: '#3182CE', // Pro Blue
+      badge: '#FFF',
+      text: '#1A202C',
+      muted: '#718096',
+      cardBg: '#FFF',
+      border: '#E2E8F0',
+      btnBg: '#3182CE',
+      btnText: '#FFF'
+    }
+  };
+
+  const current = themeStyles[theme];
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: current.grad[0] }]}>
       <LinearGradient
-        colors={['#009050', '#004D2B']}
+        colors={current.grad}
         style={StyleSheet.absoluteFill}
       />
       
       {/* Decorative patterns */}
-      <View style={[styles.circle, { top: -100, right: -100, width: 400, height: 400, opacity: 0.1 }]} />
-      <View style={[styles.circle, { bottom: -150, left: -150, width: 500, height: 500, opacity: 0.15 }]} />
+      <View style={[styles.circle, { top: -100, right: -100, width: 400, height: 400, opacity: theme === 'arctic' ? 0.4 : 0.1, backgroundColor: current.accent }]} />
+      <View style={[styles.circle, { bottom: -150, left: -150, width: 500, height: 500, opacity: theme === 'arctic' ? 0.3 : 0.15, backgroundColor: current.accent }]} />
 
       <View style={styles.content}>
         <View style={styles.brandContainer}>
-          <HugeiconsIcon icon={DashboardCircleIcon} size={28} color="#FFF" />
-          <Text style={styles.brandName}>AI CAL TRACK</Text>
+          <HugeiconsIcon icon={DashboardCircleIcon} size={28} color={current.accent} />
+          <Text style={[styles.brandName, { color: current.accent }]}>AI CAL TRACK</Text>
         </View>
 
         <View style={styles.header}>
-          <View style={styles.profileWrapper}>
+          <View style={[styles.profileWrapper, { borderColor: current.border }]}>
              {imageUrl ? (
-               <Image source={{ uri: imageUrl }} style={styles.avatar} />
+               <Image source={{ uri: imageUrl }} style={[styles.avatar, { borderColor: current.border }]} />
              ) : (
-               <View style={[styles.avatar, styles.placeholder]}>
-                 <Text style={styles.placeholderText}>{name.charAt(0)}</Text>
+               <View style={[styles.avatar, styles.placeholder, { backgroundColor: current.cardBg, borderColor: current.border }]}>
+                 <Text style={[styles.placeholderText, { color: current.accent }]}>{name.charAt(0)}</Text>
                </View>
              )}
-             <View style={styles.crownBadge}>
-               <HugeiconsIcon icon={CrownIcon} size={14} color="#009050" />
+             <View style={[styles.crownBadge, { backgroundColor: current.accent }]}>
+               <HugeiconsIcon icon={CrownIcon} size={14} color={current.badge} />
              </View>
           </View>
-          <Text style={styles.name}>{name}</Text>
-          <View style={styles.proBadge}>
-             <Text style={styles.proText}>ULTRA PERFORMER</Text>
+          <Text style={[styles.name, { color: current.text }]}>{name}</Text>
+          <View style={[styles.proBadge, { borderColor: current.border, backgroundColor: theme === 'arctic' ? '#FFF' : 'rgba(0,0,0,0.3)' }]}>
+             <Text style={[styles.proText, { color: theme === 'arctic' ? current.accent : '#FFF' }]}>ULTRA PERFORMER</Text>
           </View>
         </View>
 
         <View style={styles.statsGrid}>
-          <View style={styles.statItem}>
-            <View style={styles.iconCircle}>
-               <HugeiconsIcon icon={FireIcon} size={32} color="#FFFFFF" />
+          {[
+            { label: calorieLabel, value: calories.toLocaleString(), icon: FireIcon },
+            { label: 'Active Days', value: days, icon: Award01Icon },
+            { label: 'Stats Logged', value: logs, icon: ActivityIcon },
+          ].map((stat, idx) => (
+            <View key={idx} style={[styles.statItem, { backgroundColor: current.cardBg, borderColor: current.border }]}>
+              <View style={[styles.iconCircle, { backgroundColor: theme === 'arctic' ? current.grad[1] : 'rgba(255,255,255,0.2)' }]}>
+                 <HugeiconsIcon icon={stat.icon} size={32} color={theme === 'midnight' ? current.accent : (theme === 'arctic' ? current.accent : '#FFF')} />
+              </View>
+              <Text style={[styles.statValue, { color: current.text }]}>{stat.value}</Text>
+              <Text style={[styles.statLabel, { color: current.muted }]}>{stat.label}</Text>
             </View>
-            <Text style={styles.statValue}>{calories.toLocaleString()}</Text>
-            <Text style={styles.statLabel}>{calorieLabel}</Text>
-          </View>
-
-          <View style={styles.statItem}>
-            <View style={styles.iconCircle}>
-               <HugeiconsIcon icon={Award01Icon} size={32} color="#FFFFFF" />
-            </View>
-            <Text style={styles.statValue}>{days}</Text>
-            <Text style={styles.statLabel}>Active Days</Text>
-          </View>
-
-          <View style={styles.statItem}>
-            <View style={styles.iconCircle}>
-               <HugeiconsIcon icon={ActivityIcon} size={32} color="#FFFFFF" />
-            </View>
-            <Text style={styles.statValue}>{logs}</Text>
-            <Text style={styles.statLabel}>Stats Logged</Text>
-          </View>
+          ))}
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.tagline}>My journey powered by AI Coach</Text>
-          <View style={styles.appPromo}>
-            <Text style={styles.appPromoText}>JOIN THE ELITE AT AICalTrack.com</Text>
+          <Text style={[styles.tagline, { color: current.muted }]}>My journey powered by AI Coach</Text>
+          <View style={[styles.appPromo, { backgroundColor: current.btnBg }]}>
+            <Text style={[styles.appPromoText, { color: current.btnText }]}>JOIN THE ELITE AT AICALTRACK.COM</Text>
           </View>
         </View>
       </View>

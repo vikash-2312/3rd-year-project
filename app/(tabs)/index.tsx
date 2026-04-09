@@ -1,5 +1,17 @@
 import { useUser } from "@clerk/expo";
-import { collection, doc, getDoc, limit, onSnapshot, query, where, deleteDoc, addDoc, serverTimestamp } from "firebase/firestore";
+import { 
+  collection, 
+  doc, 
+  getDoc, 
+  limit, 
+  onSnapshot, 
+  query, 
+  where, 
+  deleteDoc, 
+  addDoc, 
+  serverTimestamp, 
+  getDocs 
+} from "firebase/firestore";
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, View, Text, Alert, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -12,19 +24,27 @@ import { WaterCard } from "../../components/WaterCard";
 import { WeeklyCalendar } from "../../components/WeeklyCalendar";
 import { HealthScoreCard } from "../../components/HealthScoreCard";
 import { DailyInsightCard } from "../../components/DailyInsightCard";
-import { AIWorkoutQuickCard } from "../../components/AIWorkoutQuickCard";
 import { HealthScoreModal } from "../../components/HealthScoreModal";
+import { AIProactiveAlert } from "../../components/AIProactiveAlert";
 import { useRouter } from "expo-router";
-import { SparklesIcon, Activity01Icon } from '@hugeicons/core-free-icons';
+import { SparklesIcon, Activity01Icon, Flag01Icon, AvocadoIcon, Camera01Icon, SmartWatch01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeOut, useAnimatedStyle, withRepeat, withSequence, withTiming, useSharedValue, withSpring } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 import { Skeleton } from "../../components/Skeleton";
 import { Confetti, ConfettiRef } from "../../components/Confetti";
+import { SmartMealSuggestions } from "../../components/SmartMealSuggestions";
+import { OnboardingChecklist, OnboardingTask } from "../../components/OnboardingChecklist";
 
 import { db } from "../../lib/firebase";
 import { useTheme } from "../../lib/ThemeContext";
+import { getUserAnalysisContext } from "../../services/healthAnalyzer";
+import { analyzeUserPerformance, AIInsight } from "../../services/decisionEngine";
+import { getMemory } from "../../services/memoryService";
+import { getFrequentMeals, quickLogMeal, FrequentMeal, getStarterMeals } from "../../services/mealService";
+import { useHealthData } from "../../hooks/useHealthData";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const HomeSkeleton = () => {
   const { colors } = useTheme();
@@ -85,6 +105,8 @@ export default function Home() {
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulse.value }],
   }));
+  
+  const { data: healthData } = useHealthData(user?.id);
 
   const [userData, setUserData] = useState<any>(null);
   const [logs, setLogs] = useState<any[]>([]);
@@ -93,24 +115,157 @@ export default function Home() {
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
   const [latestWeight, setLatestWeight] = useState<number | null>(null);
   const [isScoreModalVisible, setIsScoreModalVisible] = useState(false);
+  const [activeInsights, setActiveInsights] = useState<AIInsight[]>([]);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [frequentMeals, setFrequentMeals] = useState<FrequentMeal[]>([]);
+  const [isQuickLogging, setIsQuickLogging] = useState(false);
+  const [isStarterPack, setIsStarterPack] = useState(false);
+  const [loggedMealName, setLoggedMealName] = useState<string | undefined>();
+  const [isChecklistDismissed, setIsChecklistDismissed] = useState(false);
+  const [hasLoggedAnyMeal, setHasLoggedAnyMeal] = useState(false);
+  const [hasAnyPhoto, setHasAnyPhoto] = useState(false);
+  const dismissedInsightIds = useRef<Set<string>>(new Set());
   
   const confettiRef = useRef<ConfettiRef>(null);
   const lastCalorieCelebration = useRef<string | null>(null);
   const lastWaterCelebration = useRef<string | null>(null);
+  const isAnalyzingRef = useRef(false);
 
+  const runProactiveAnalysis = useCallback(async (profile: any) => {
+    if (!user || isAnalyzingRef.current) return;
+    isAnalyzingRef.current = true;
+    setIsAnalyzing(true);
+    try {
+      const context = await getUserAnalysisContext(
+        user.id, 
+        profile, 
+        7, 
+        healthData.steps, 
+        profile?.macros?.dailySteps
+      );
+      if (context) {
+        context.memory = await getMemory(user.id);
+        const insights = analyzeUserPerformance(context);
+        
+        // Filter out insights that were dismissed in the current session
+        // or identified by ID as already seen/ignored
+        setActiveInsights(insights.filter(i => !dismissedInsightIds.current.has(i.id)));
+      }
+    } catch (e) {
+      console.error("[Home] Analysis failed:", e);
+    } finally {
+      isAnalyzingRef.current = false;
+      setIsAnalyzing(false);
+    }
+  }, [user, healthData.steps]);
+
+  const loadFrequentMeals = useCallback(async () => {
+    if (!user) return;
+    const meals = await getFrequentMeals(user.id);
+    if (meals.length === 0) {
+      setFrequentMeals(getStarterMeals());
+      setIsStarterPack(true);
+    } else {
+      setFrequentMeals(meals);
+      setIsStarterPack(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadFrequentMeals();
+  }, [user]);
+
+  const handleQuickLogMeal = async (meal: FrequentMeal) => {
+    if (!user || isQuickLogging) return;
+    setIsQuickLogging(true);
+    setLoggedMealName(meal.name);
+    
+    try {
+      const success = await quickLogMeal(user.id, meal);
+      if (success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        
+        // Celebration for first-ever log
+        if (!hasLoggedAnyMeal) {
+          setHasLoggedAnyMeal(true);
+          confettiRef.current?.trigger();
+          Alert.alert("First Log Completed! 🏆", "Welcome to the elite minority who actually tracks their fuel. Keep this up!");
+        }
+
+        loadFrequentMeals(); // Refresh the counts
+      } else {
+        Alert.alert('Error', 'Failed to log meal. Please try again.');
+      }
+    } catch (e) {
+      console.error('[Home] QuickLog Error:', e);
+    } finally {
+      setIsQuickLogging(false);
+      setLoggedMealName(undefined);
+    }
+  };
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Check dismissal status
+    AsyncStorage.getItem(`checklist_dismissed_${user.id}`).then(val => {
+      if (val === 'true') setIsChecklistDismissed(true);
+    });
+
+    // Real-time listen for ANY logs (for checklist)
+    const logQ = query(collection(db, 'logs'), where('userId', '==', user.id), limit(1));
+    const unsubscribeAnyLogs = onSnapshot(logQ, (snap) => setHasLoggedAnyMeal(!snap.empty));
+
+    // Real-time listen for ANY photos (for checklist)
+    const photoQ = query(collection(db, 'progress_photos'), where('userId', '==', user.id), limit(1));
+    const unsubscribeAnyPhotos = onSnapshot(photoQ, (snap) => setHasAnyPhoto(!snap.empty));
+
+    return () => {
+      unsubscribeAnyLogs();
+      unsubscribeAnyPhotos();
+    };
+  }, [user]);
+
+  // BUG-10 FIX: Split profile/weight listeners from date-dependent logs listener
+  // Profile & weight don't depend on selectedDate, so they shouldn't re-subscribe on date change
   useEffect(() => {
     if (!user) return;
 
     const userRef = doc(db, 'users', user.id);
     const unsubscribeUser = onSnapshot(userRef, (docSnap) => {
       if (docSnap.exists()) {
-        setUserData(docSnap.data());
+        const data = docSnap.data();
+        setUserData(data);
+        runProactiveAnalysis(data);
       }
       setIsProfileLoading(false);
     }, (error) => {
       console.error("Error listening to user data:", error);
       setIsProfileLoading(false);
     });
+
+    const weightQuery = query(
+      collection(db, 'weight_logs'),
+      where('userId', '==', user.id)
+    );
+
+    const unsubscribeWeight = onSnapshot(weightQuery, (snapshot) => {
+      if (!snapshot.empty) {
+        const weightLogs = snapshot.docs.map(doc => doc.data());
+        weightLogs.sort((a, b) => b.date.localeCompare(a.date));
+        setLatestWeight(weightLogs[0].weightKg);
+      }
+    });
+
+    return () => {
+      unsubscribeUser();
+      unsubscribeWeight();
+    };
+  }, [user]);
+
+  // Date-dependent logs listener (only re-subscribes when selectedDate changes)
+  useEffect(() => {
+    if (!user) return;
 
     const dateStr = format(selectedDate, 'yyyy-MM-dd');
     setIsLogsLoading(true);
@@ -158,23 +313,8 @@ export default function Home() {
       setIsLogsLoading(false);
     });
 
-    const weightQuery = query(
-      collection(db, 'weight_logs'),
-      where('userId', '==', user.id)
-    );
-
-    const unsubscribeWeight = onSnapshot(weightQuery, (snapshot) => {
-      if (!snapshot.empty) {
-        const weightLogs = snapshot.docs.map(doc => doc.data());
-        weightLogs.sort((a, b) => b.date.localeCompare(a.date));
-        setLatestWeight(weightLogs[0].weightKg);
-      }
-    });
-
     return () => {
-      if (unsubscribeUser) unsubscribeUser();
-      if (unsubscribeLogs) unsubscribeLogs();
-      if (unsubscribeWeight) unsubscribeWeight();
+      unsubscribeLogs();
     };
   }, [user, selectedDate]);
 
@@ -184,7 +324,7 @@ export default function Home() {
     const dateKey = format(selectedDate, 'yyyy-MM-dd');
     if (!isDateToday(selectedDate)) return;
 
-    const targetCalories = userData.dailyCalories || 2000;
+    const targetCalories = userData?.profile?.macros?.dailyCalories || 2000;
     const consumedCalories = logs
       .filter(l => (l.type === 'food' || l.type === 'ai_log'))
       .reduce((acc, curr) => acc + (Number(curr.calories) || 0), 0);
@@ -197,7 +337,7 @@ export default function Home() {
       }, 500);
     }
 
-    const targetWater = userData.targetWaterLiters || 2.0;
+    const targetWater = userData?.profile?.macros?.waterIntakeLiters || 2.0;
     const consumedWater = logs
       .filter(l => l.type === 'water')
       .reduce((acc, curr) => acc + (Number(curr.waterLiters) || 0), 0);
@@ -295,7 +435,34 @@ export default function Home() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView 
+        style={styles.container} 
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* AI Proactive Alerts */}
+        {activeInsights.length > 0 && (
+          <View style={{ marginTop: 8 }}>
+            {activeInsights.slice(0, 1).map(insight => (
+              <AIProactiveAlert
+                key={insight.id}
+                insight={insight}
+                onAction={(msg) => {
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  router.push({
+                    pathname: '/ai-coach',
+                    params: { initialMessage: msg }
+                  });
+                }}
+                onDismiss={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  dismissedInsightIds.current.add(insight.id);
+                  setActiveInsights(prev => prev.filter(i => i.id !== insight.id));
+                }}
+              />
+            ))}
+          </View>
+        )}
         <HomeHeader 
           userData={userData}
           healthScore={currentHealthScore} 
@@ -306,6 +473,50 @@ export default function Home() {
             setIsScoreModalVisible(true);
           }}
         />
+
+        {(() => {
+          if (isChecklistDismissed || isProfileLoading) return null;
+          
+          const tasks: OnboardingTask[] = [
+            {
+              id: 'goal',
+              title: 'Set your Weight Goal',
+              isCompleted: !!userData?.profile?.measurements?.targetWeightKg,
+              icon: Flag01Icon,
+              color: '#F6AD55',
+              onPress: () => router.push('/personal-details'),
+            },
+            {
+              id: 'meal',
+              title: 'Log your first Meal',
+              isCompleted: hasLoggedAnyMeal,
+              icon: AvocadoIcon,
+              color: '#009050',
+              onPress: () => router.push('/log-food' as any),
+            },
+            {
+              id: 'photo',
+              title: 'Upload a Photo',
+              isCompleted: hasAnyPhoto,
+              icon: Camera01Icon,
+              color: '#3182CE',
+              onPress: () => router.push('/add-progress-photo' as any),
+            }
+          ];
+
+          if (tasks.every(t => t.isCompleted)) return null;
+
+          return (
+            <OnboardingChecklist 
+              tasks={tasks} 
+              onDismiss={async () => {
+                setIsChecklistDismissed(true);
+                if (user) await AsyncStorage.setItem(`checklist_dismissed_${user.id}`, 'true');
+              }}
+            />
+          );
+        })()}
+
         <WeeklyCalendar selectedDate={selectedDate} onDateSelect={setSelectedDate} />
 
         {targets.dailyCalories > 0 && user?.id && (
@@ -318,7 +529,17 @@ export default function Home() {
           />
         )}
 
-        <AIWorkoutQuickCard />
+        {isToday && frequentMeals.length > 0 && (
+          <SmartMealSuggestions
+            meals={frequentMeals}
+            onLogMeal={handleQuickLogMeal}
+            isLogging={isQuickLogging}
+            loggedMealName={loggedMealName}
+            title={isStarterPack ? "Recommended For You" : "Smart Suggestions"}
+            subtitle={isStarterPack ? "Starter pack for new users" : "Based on your recent history"}
+          />
+        )}
+
 
         {(isProfileLoading || isLogsLoading) ? (
           <HomeSkeleton />

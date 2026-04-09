@@ -6,9 +6,9 @@
  */
 
 import { format } from 'date-fns';
-import { addDoc, collection, doc, setDoc, getDoc, serverTimestamp, deleteDoc, query, where, getDocs } from 'firebase/firestore';
+import { addDoc, collection, doc, setDoc, getDoc, serverTimestamp, deleteDoc, query, where, getDocs, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { sendToGemini, AIResponse, AIAction, ChatMessage, UserContext } from './aiService';
+import { sendToGemini, sendToGeminiStreaming, AIResponse, AIAction, ChatMessage, UserContext } from './aiService';
 import { getMemory, updateMemory } from './memoryService';
 import { adjustPlan } from './adjustmentEngine';
 
@@ -48,13 +48,15 @@ export async function processMessage(
     weeklySummary?: any[];
   },
   chatHistory: ChatMessage[],
-  imageBase64?: string
+  imageBase64?: string,
+  intelligenceMode: 'lightning' | 'pro' = 'lightning'
 ): Promise<ProcessedResult> {
   // 1. Load user memory
   const memory = await getMemory(userData.userId);
 
   // 2. Build context object
   const context: UserContext = {
+    userId: userData.userId,
     goal: userData.goal,
     weight: userData.weight,
     dailyCalories: userData.dailyCalories,
@@ -65,14 +67,14 @@ export async function processMessage(
     water: userData.water,
     exerciseMinutes: userData.exerciseMinutes,
     memory,
-    recentMessages: chatHistory.slice(-5),
+    recentMessages: (chatHistory || []).slice(-5),
     onboarding: userData.onboarding,
     todayLogs: userData.todayLogs,
     weeklySummary: userData.weeklySummary,
   };
 
   // 3. Call Gemini
-  const aiResponse = await sendToGemini(userMessage, context, imageBase64);
+  const aiResponse = await sendToGemini(userMessage, context, imageBase64, intelligenceMode);
 
   // 4. Execute actions if present
   let actionStatus: string | undefined;
@@ -94,6 +96,92 @@ export async function processMessage(
 
   // 6. Build and return the AI chat message
   const aiMessage: ChatMessage = {
+    id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    role: 'ai',
+    content: aiResponse.response,
+    timestamp: Date.now(),
+    actionStatus,
+    quickActions: aiResponse.quick_actions?.map((qa) => ({
+      label: qa.label,
+      message: qa.message,
+    })),
+  };
+
+  return { aiMessage, actionStatus };
+}
+
+/**
+ * Streaming version of processMessage.
+ * yieldText is called with partial response text as it arrives.
+ */
+export async function processMessageStreaming(
+  userMessage: string,
+  userData: {
+    userId: string;
+    goal: string;
+    weight: number;
+    dailyCalories: number;
+    consumedCalories: number;
+    protein: number;
+    carbs: number;
+    fats: number;
+    water: number;
+    exerciseMinutes: number;
+    onboarding?: any;
+    todayLogs?: any[];
+    weeklySummary?: any[];
+  },
+  chatHistory: ChatMessage[],
+  yieldText: (text: string) => void,
+  imageBase64?: string,
+  intelligenceMode: 'lightning' | 'pro' = 'lightning'
+): Promise<ProcessedResult> {
+  const memory = await getMemory(userData.userId);
+
+  const context: UserContext = {
+    userId: userData.userId,
+    goal: userData.goal,
+    weight: userData.weight,
+    dailyCalories: userData.dailyCalories,
+    consumedCalories: userData.consumedCalories,
+    protein: userData.protein,
+    carbs: userData.carbs,
+    fats: userData.fats,
+    water: userData.water,
+    exerciseMinutes: userData.exerciseMinutes,
+    memory,
+    recentMessages: (chatHistory || []).slice(-15),
+    onboarding: userData.onboarding,
+    todayLogs: userData.todayLogs,
+    weeklySummary: userData.weeklySummary,
+    historicalLogs: (userData as any).historicalLogs,
+  };
+
+  // Call Streaming version of Gemini
+  const aiResponse = await sendToGeminiStreaming(
+    userMessage, 
+    context, 
+    yieldText, 
+    imageBase64, 
+    intelligenceMode
+  );
+
+  // Execute actions (same as standard)
+  let actionStatus: string | undefined;
+  if (aiResponse.actions && aiResponse.actions.length > 0) {
+    const statusResults = await Promise.all(
+      aiResponse.actions.map((action) => executeAction(action, userData.userId))
+    );
+    actionStatus = statusResults.filter(Boolean).join(' | ');
+  }
+
+  if (aiResponse.memory_update) {
+    await updateMemory(userData.userId, aiResponse.memory_update);
+    if (!actionStatus) actionStatus = '🧠 Preferences saved';
+  }
+
+  const aiMessage: ChatMessage = {
+    id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     role: 'ai',
     content: aiResponse.response,
     timestamp: Date.now(),
@@ -186,6 +274,11 @@ async function executeAction(action: AIAction, userId: string): Promise<string> 
           return '⚠️ Invalid food data';
         }
 
+        // SEC-03: Validate bounds to prevent AI prompt injection from corrupting data
+        if (calories < 0 || calories > 15000 || protein < 0 || protein > 1000 || carbs < 0 || carbs > 2000 || fat < 0 || fat > 1000) {
+          return '⚠️ Food values out of valid range';
+        }
+
         const logData = {
           userId,
           type: 'food',
@@ -259,10 +352,22 @@ async function executeAction(action: AIAction, userId: string): Promise<string> 
       }
 
       case 'undo_log': {
-        const q = query(collection(db, 'logs'), where('userId', '==', userId));
+        const { type: filterType, amount: filterAmount } = action.data;
+        
+        let q = query(
+          collection(db, 'logs'), 
+          where('userId', '==', userId),
+          limit(20)
+        );
+
+        // If AI specified a type, filter by it to be more precise
+        if (filterType) {
+          q = query(q, where('type', '==', filterType));
+        }
+
         const snap = await getDocs(q);
         if (snap.empty) {
-          return '⚠️ No recent logs found to undo.';
+          return `⚠️ No recent ${filterType || 'activity'} logs found to undo.`;
         }
         
         // Sort securely in memory to avoid composite index requirements

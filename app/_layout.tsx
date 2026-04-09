@@ -69,7 +69,7 @@ const InitialLayout = () => {
     };
     checkSigningIn();
     
-    const interval = setInterval(checkSigningIn, 500);
+    const interval = setInterval(checkSigningIn, 2000);
     return () => clearInterval(interval);
   }, [segments, isSignedIn]);
 
@@ -164,10 +164,6 @@ const InitialLayout = () => {
         />
         <Stack.Screen
           name="log-food"
-          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-        />
-        <Stack.Screen
-          name="log-water"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
         <Stack.Screen

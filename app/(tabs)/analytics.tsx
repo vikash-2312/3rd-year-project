@@ -6,7 +6,7 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from "expo-router";
 import { collection, doc, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Dimensions, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { LineChart } from "react-native-chart-kit";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -66,6 +66,9 @@ export default function Analytics() {
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [isMomentumPreviewVisible, setIsMomentumPreviewVisible] = useState(false);
   const momentumViewShotRef = useRef<ViewShot>(null);
+  
+  // Weight Trend Timeframe: '7D' | '1M' | '3M' | 'ALL'
+  const [weightTimeframe, setWeightTimeframe] = useState<'7D' | '1M' | '3M' | 'ALL'>('1M');
   
   // Segment Navigation: 'visual' or 'data'
   const [activeSegment, setActiveSegment] = useState<'visual' | 'data'>('visual');
@@ -135,7 +138,7 @@ export default function Analytics() {
       collection(db, 'weight_logs'),
       where('userId', '==', user.id),
       orderBy('date', 'desc'),
-      limit(30)
+      limit(150)
     );
 
     const unsubscribeWeight = onSnapshot(weightQuery, (snapshot) => {
@@ -331,6 +334,17 @@ export default function Analytics() {
   const latestLoggedWeight = weightHistory.length > 0 ? weightHistory[weightHistory.length - 1].weight : null;
   const weight = latestLoggedWeight || userData?.profile?.measurements?.weightKg || userData?.onboarding_weight || "--";
 
+  // Filter weight history based on selected timeframe
+  const filteredWeightHistory = useMemo(() => {
+    if (weightHistory.length === 0) return [];
+    if (weightTimeframe === 'ALL') return weightHistory;
+
+    const cutoff = subDays(new Date(), weightTimeframe === '7D' ? 7 : weightTimeframe === '1M' ? 30 : 90);
+    const cutoffStr = format(cutoff, 'yyyy-MM-dd');
+    
+    return weightHistory.filter(h => h.date >= cutoffStr);
+  }, [weightHistory, weightTimeframe]);
+
   const totalConsumed = dailyConsumed.reduce((a, b) => a + b, 0);
   const totalBurned = dailyBurned.reduce((a, b) => a + b, 0);
   const netEnergy = totalConsumed - totalBurned;
@@ -516,72 +530,109 @@ export default function Analytics() {
               activeDays={weekActivity}
             />
 
-            {weightHistory.length > 0 ? (
+            {filteredWeightHistory.length > 0 ? (
               (() => {
-                const firstWeight = weightHistory[0].weight;
-                const latestWeight = weightHistory[weightHistory.length - 1].weight;
+                const firstWeight = filteredWeightHistory[0].weight;
+                const latestWeight = filteredWeightHistory[filteredWeightHistory.length - 1].weight;
                 const weightChange = latestWeight - firstWeight;
                 const isLoss = weightChange < 0;
                 const isGain = weightChange > 0;
-                const firstDate = weightHistory[0].date;
-                const lastDate = weightHistory[weightHistory.length - 1].date;
+                const firstDate = filteredWeightHistory[0].date;
+                const lastDate = filteredWeightHistory[filteredWeightHistory.length - 1].date;
 
                 const trendData = {
-                  labels: weightHistory.length <= 1
+                  labels: filteredWeightHistory.length <= 1
                     ? ["Today"]
-                    : weightHistory.map((h, i) => {
+                    : filteredWeightHistory.map((h: any, i: number) => {
                       const isFirst = i === 0;
-                      const isLast = i === weightHistory.length - 1;
-                      const isMid = i === Math.floor(weightHistory.length / 2);
-                      if (isFirst || isLast || (isMid && weightHistory.length > 3)) {
+                      const isLast = i === filteredWeightHistory.length - 1;
+                      const isMid = i === Math.floor(filteredWeightHistory.length / 2);
+                      if (isFirst || isLast || (isMid && filteredWeightHistory.length > 3)) {
                         return format(new Date(h.date), 'MMM d');
                       }
                       return "";
                     }),
                   datasets: [
                     {
-                      data: (weightHistory || []).length === 1
-                        ? [(weightHistory || [])[0].weight, (weightHistory || [])[0].weight]
-                        : ((weightHistory || []).length > 0 ? (weightHistory || []).map(h => h?.weight || 0) : [0]),
+                      data: (filteredWeightHistory || []).length === 1
+                        ? [(filteredWeightHistory || [])[0].weight, (filteredWeightHistory || [])[0].weight]
+                        : ((filteredWeightHistory || []).length > 0 ? (filteredWeightHistory || []).map((h: any) => h?.weight || 0) : [0]),
                       color: (opacity = 1) => `rgba(0, 144, 80, ${opacity})`,
                       strokeWidth: 3
                     },
                     ...(targetWeight ? [{
-                      data: weightHistory.length <= 1 ? [targetWeight, targetWeight] : weightHistory.map(() => targetWeight),
+                      data: filteredWeightHistory.length <= 1 ? [targetWeight, targetWeight] : filteredWeightHistory.map((h: any) => targetWeight),
                       color: (opacity = 1) => isDark ? `rgba(214, 158, 46, 0.4)` : `rgba(214, 158, 46, 0.3)`,
                       strokeWidth: 1,
                       withDots: false,
                     }] : []),
-                    {
-                      data: [dataMin - padding, dataMax + padding],
-                      withDots: false,
-                      color: () => 'transparent',
-                      strokeWidth: 0,
-                    }
                   ]
                 };
+
+                const minWeight = (filteredWeightHistory || []).length > 0 ? Math.min(...(filteredWeightHistory || []).map(h => h?.weight || 0)) : 50;
+                const maxWeight = (filteredWeightHistory || []).length > 0 ? Math.max(...(filteredWeightHistory || []).map(h => h?.weight || 100)) : 100;
+                const dataMin = targetWeight ? Math.min(minWeight, targetWeight) : minWeight;
+                const dataMax = targetWeight ? Math.max(maxWeight, targetWeight) : maxWeight;
+                const range = dataMax - dataMin;
+                const padding = Math.max(range * 0.2, 1.25);
+
+                const firstDateTime = new Date(firstDate).getTime();
+                const lastDateTime = new Date(lastDate).getTime();
+                const daysDiff = Math.max(1, Math.round((lastDateTime - firstDateTime) / (1000 * 60 * 60 * 24)));
+                const weeklyRate = (weightChange / daysDiff) * 7;
+
+                let weeksToGoal = null;
+                if (targetWeight && Math.abs(weeklyRate) > 0.01) {
+                  const remaining = targetWeight - latestWeight;
+                  if ((remaining < 0 && weeklyRate < 0) || (remaining > 0 && weeklyRate > 0)) {
+                    weeksToGoal = Math.abs(remaining / weeklyRate);
+                  }
+                }
 
                 return (
                   <View style={[styles.card, styles.energyCard, { backgroundColor: colors.card, marginTop: 16 }]}>
                     <View style={styles.energyHeaderRow}>
                       <View>
-                        <View style={styles.flexRowAlignCenter}>
-                          <Text style={[styles.cardHeaderTitle, { color: colors.text, marginBottom: 0 }]}>Weight Trend</Text>
-                          {targetWeight && (
-                            <View style={[styles.targetBadge, { backgroundColor: isDark ? '#2D2914' : '#FFFFF0' }]}>
-                              <Text style={[styles.targetBadgeText, { color: colors.warning }]}>Goal: {targetWeight}kg</Text>
-                            </View>
-                          )}
-                        </View>
+                        <Text style={[styles.cardHeaderTitle, { color: colors.text, marginBottom: 0 }]}>Weight Trend</Text>
                         <Text style={[styles.energySubtitle, { color: colors.textMuted }]}>
                           {weightHistory.length} {weightHistory.length === 1 ? 'entry' : 'entries'} tracked
                         </Text>
                       </View>
-                      <TouchableOpacity
-                        onPress={() => router.push('/update-weight' as any)}
-                        style={[styles.energyHeaderBadge, { backgroundColor: isDark ? '#1A2A3B' : '#EBF8FF' }]}>
-                        <Text style={[styles.energyHeaderBadgeText, { color: colors.blue }]}>Update</Text>
-                      </TouchableOpacity>
+                      {targetWeight && (
+                        <View style={[styles.targetBadge, { backgroundColor: isDark ? '#2D2914' : '#FFFFF0' }]}>
+                          <Text style={[styles.targetBadgeText, { color: colors.warning }]}>Goal: {targetWeight}kg</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <View style={[styles.timeframeContainer, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }]}>
+                      {[
+                        { label: '7 D', value: '7D' },
+                        { label: '1 M', value: '1M' },
+                        { label: '3 M', value: '3M' },
+                        { label: 'All', value: 'ALL' },
+                      ].map((tf) => (
+                        <TouchableOpacity
+                          key={tf.value}
+                          onPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            setWeightTimeframe(tf.value as any);
+                          }}
+                          style={[
+                            styles.timeframeButton,
+                            weightTimeframe === tf.value && { backgroundColor: isDark ? colors.border : '#E2E8F0' },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.timeframeText,
+                              { color: weightTimeframe === tf.value ? colors.text : colors.textMuted },
+                            ]}
+                          >
+                            {tf.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
                     </View>
 
                     <View style={styles.energyPillsRow}>
@@ -640,9 +691,29 @@ export default function Analytics() {
                       />
                     </View>
 
-                    <View style={[styles.weightTrendFooter, { borderTopColor: colors.border }]}>
-                      <Text style={[styles.weightTrendFooterText, { color: colors.textMuted }]}>
-                        {format(new Date(firstDate), 'MMM d, yyyy')} — {format(new Date(lastDate), 'MMM d, yyyy')}
+                    <View style={[styles.weightTrendFooter, { borderTopColor: colors.border, flexDirection: 'column', alignItems: 'flex-start', gap: 8 }]}>
+                      <View style={styles.flexRowAlignCenter}>
+                        <HugeiconsIcon icon={FireIcon} size={14} color={colors.accent} />
+                        <Text style={[styles.mathInsightText, { color: colors.textSecondary, marginLeft: 6 }]}>
+                          Rate: <Text style={{ fontWeight: '700', color: weeklyRate <= 0 ? colors.accent : colors.danger }}>
+                            {weeklyRate > 0 ? '+' : ''}{weeklyRate.toFixed(2)}kg / week
+                          </Text>
+                        </Text>
+                      </View>
+                      
+                      {weeksToGoal !== null && (
+                        <View style={styles.flexRowAlignCenter}>
+                          <HugeiconsIcon icon={ChampionIcon} size={14} color={colors.warning} />
+                          <Text style={[styles.mathInsightText, { color: colors.textSecondary, marginLeft: 6 }]}>
+                            Est. Goal: <Text style={{ fontWeight: '700', color: colors.warning }}>
+                              {Math.ceil(weeksToGoal)} weeks ({format(addDays(new Date(), Math.ceil(weeksToGoal) * 7), 'MMM yyyy')})
+                            </Text>
+                          </Text>
+                        </View>
+                      )}
+
+                      <Text style={[styles.weightTrendFooterText, { color: colors.textMuted, marginTop: 4 }]}>
+                        Data span: {format(new Date(firstDate), 'MMM d')} — {format(new Date(lastDate), 'MMM d')} ({daysDiff} days)
                       </Text>
                     </View>
                   </View>
@@ -1457,5 +1528,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  mathInsightText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  timeframeContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    borderRadius: 12,
+    padding: 3,
+    marginBottom: 16,
+  },
+  timeframeButton: {
+    flex: 1,
+    paddingVertical: 6,
+    alignItems: 'center',
+    borderRadius: 9,
+  },
+  timeframeText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

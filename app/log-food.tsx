@@ -41,10 +41,16 @@ export default function LogFoodScreen() {
   const initialUnit = parseInitialUnit((params.serving as string) || 'serving');
 
   // We store the "Base" values (per 1 unit of quantity) so we can scale accurately
-  const [baseCalories] = useState(parseFloat((params.calories || params.aiCalories) as string) / initialQty || 0);
-  const [baseProtein] = useState(parseFloat((params.protein || params.aiProtein) as string) / initialQty || 0);
-  const [baseCarbs] = useState(parseFloat((params.carbs || params.aiCarbs) as string) / initialQty || 0);
-  const [baseFat] = useState(parseFloat((params.fat || params.aiFat) as string) / initialQty || 0);
+  // Safe parser: avoids NaN/Infinity from bad params or zero initialQty
+  const safeDivide = (raw: string | undefined, qty: number) => {
+    const val = parseFloat(raw as string);
+    const safeQty = qty || 1;
+    return isNaN(val) ? 0 : val / safeQty;
+  };
+  const [baseCalories] = useState(() => safeDivide((params.calories || params.aiCalories) as string, initialQty));
+  const [baseProtein] = useState(() => safeDivide((params.protein || params.aiProtein) as string, initialQty));
+  const [baseCarbs] = useState(() => safeDivide((params.carbs || params.aiCarbs) as string, initialQty));
+  const [baseFat] = useState(() => safeDivide((params.fat || params.aiFat) as string, initialQty));
 
   // States
   const [foodName] = useState((params.foodName || params.aiName) as string || 'Selected Food');

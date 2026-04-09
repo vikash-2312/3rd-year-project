@@ -30,6 +30,8 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+import { Camera01Icon, Image01Icon } from '@hugeicons/core-free-icons';
 
 import { useTheme } from '../lib/ThemeContext';
 import { uploadProgressPhoto } from '../services/progressPhotoService';
@@ -41,8 +43,10 @@ export default function AddProgressPhoto() {
   const router = useRouter();
   const { user } = useUser();
   const params = useLocalSearchParams<{ imageUri: string }>();
-  const imageUri = params.imageUri ? decodeURIComponent(params.imageUri) : null;
-
+  const [selectedImage, setSelectedImage] = useState<string | null>(
+    params.imageUri ? decodeURIComponent(params.imageUri) : null
+  );
+  
   const [weight, setWeight] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -66,7 +70,7 @@ export default function AddProgressPhoto() {
   }));
 
   const handleUpload = async () => {
-    if (!user || !imageUri) return;
+    if (!user || !selectedImage) return;
 
     try {
       setIsUploading(true);
@@ -79,7 +83,7 @@ export default function AddProgressPhoto() {
         return;
       }
 
-      await uploadProgressPhoto(user.id, imageUri, todayStr, weightNum);
+      await uploadProgressPhoto(user.id, selectedImage, todayStr, weightNum);
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Success! 🎉', 'Your progress photo has been saved.', [
@@ -93,13 +97,89 @@ export default function AddProgressPhoto() {
     }
   };
 
-  if (!imageUri) {
+  const pickImage = async (useCamera: boolean) => {
+    try {
+      if (useCamera) {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Denied', 'Camera access is required to take photos.');
+          return;
+        }
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Denied', 'Gallery access is required to choose photos.');
+          return;
+        }
+      }
+
+      const result = useCamera
+        ? await ImagePicker.launchCameraAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [3, 4],
+            quality: 0.8,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [3, 4],
+            quality: 0.8,
+          });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setSelectedImage(result.assets[0].uri);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image');
+    }
+  };
+
+  if (!selectedImage) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={[styles.errorText, { color: colors.text }]}>No image selected</Text>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={[styles.backLink, { color: colors.accent }]}>Go Back</Text>
-        </TouchableOpacity>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={[styles.backButton, { backgroundColor: colors.card }]}
+            onPress={() => router.back()}
+          >
+            <HugeiconsIcon icon={ArrowLeft01Icon} size={22} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Add Photo</Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        <View style={styles.emptyStateContainer}>
+          <Animated.View entering={FadeInDown.duration(600)} style={styles.emptyContent}>
+            <View style={[styles.emptyIconCircle, { backgroundColor: colors.card }]}>
+              <Text style={{ fontSize: 40 }}>📸</Text>
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>Record Your Progress</Text>
+            <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+              Upload a photo to track your physical transformation and stay motivated.
+            </Text>
+
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: colors.accent }]}
+                onPress={() => pickImage(true)}
+              >
+                <HugeiconsIcon icon={Camera01Icon} size={20} color="#FFF" />
+                <Text style={styles.actionButtonText}>Take a Photo</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]}
+                onPress={() => pickImage(false)}
+              >
+                <HugeiconsIcon icon={Image01Icon} size={20} color={colors.text} />
+                <Text style={[styles.actionButtonText, { color: colors.text }]}>Choose From Gallery</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </View>
       </SafeAreaView>
     );
   }
@@ -131,7 +211,13 @@ export default function AddProgressPhoto() {
 
           {/* Image Preview */}
           <Animated.View entering={FadeIn.duration(500)} style={[styles.imageCard, { backgroundColor: colors.card }]}>
-            <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="cover" />
+            <Image source={{ uri: selectedImage }} style={styles.previewImage} resizeMode="cover" />
+            <TouchableOpacity 
+              style={styles.changeBtn} 
+              onPress={() => setSelectedImage(null)}
+            >
+              <Text style={styles.changeBtnText}>Change Photo</Text>
+            </TouchableOpacity>
           </Animated.View>
 
           {/* Photo Guidance Tips */}
@@ -384,4 +470,68 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 16,
   },
+  emptyStateContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  emptyContent: {
+    alignItems: 'center',
+    gap: 16,
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 15,
+    fontWeight: '500',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 16,
+  },
+  actionButtons: {
+    width: '100%',
+    gap: 12,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 16,
+    gap: 10,
+  },
+  actionButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  changeBtn: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+  },
+  changeBtnText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
+  }
 });

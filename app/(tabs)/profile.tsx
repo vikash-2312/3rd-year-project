@@ -29,7 +29,7 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { useAuth, useUser } from "@clerk/expo";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { collection, query, where, getDocs, doc, onSnapshot } from 'firebase/firestore';
 import React, { useEffect, useState, useMemo } from "react";
 import { 
@@ -56,7 +56,6 @@ import { HealthDashboard } from '../../components/HealthDashboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { GoalProgressCard } from '../../components/profile/GoalProgressCard';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { ProfileStatsTemplate } from '../../components/profile/ProfileStatsTemplate';
@@ -74,6 +73,14 @@ export default function Profile() {
   const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isHealthModalVisible, setIsHealthModalVisible] = useState(false);
+  const params = useLocalSearchParams();
+
+  // Handle auto-open for Health Sync from Checklist
+  useEffect(() => {
+    if (params.sync === 'true') {
+      setIsHealthModalVisible(true);
+    }
+  }, [params.sync]);
 
   // 1. Listen for user profile data (Real-time)
   useEffect(() => {
@@ -185,6 +192,13 @@ export default function Profile() {
   }, [user]);
 
   const [activePersona, setActivePersona] = useState('motivational');
+  const [selectedShareTheme, setSelectedShareTheme] = useState<'emerald' | 'midnight' | 'arctic'>('emerald');
+
+  const shareThemes = [
+    { id: 'emerald', label: 'Emerald', color: '#009050' },
+    { id: 'midnight', label: 'Midnight', color: '#1A202C' },
+    { id: 'arctic', label: 'Arctic', color: '#3182CE' },
+  ] as const;
 
   const viewShotRef = React.useRef<any>(null);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -394,6 +408,37 @@ export default function Profile() {
           </View>
         </Animated.View>
 
+        <Animated.View 
+          entering={FadeInDown.delay(200).duration(800).springify()}
+          style={styles.themeSelector}
+        >
+          <Text style={[styles.themeSelectorTitle, { color: colors.textTertiary }]}>SHARE CARD STYLE</Text>
+          <View style={styles.themePills}>
+            {shareThemes.map((theme) => (
+              <TouchableOpacity
+                key={theme.id}
+                style={[
+                  styles.themePill,
+                  { borderColor: colors.border, backgroundColor: colors.card },
+                  selectedShareTheme === theme.id && { borderColor: colors.accent, backgroundColor: `${colors.accent}10` }
+                ]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setSelectedShareTheme(theme.id);
+                }}
+              >
+                <View style={[styles.themeColorDot, { backgroundColor: theme.color }]} />
+                <Text style={[
+                  styles.themePillText, 
+                  { color: selectedShareTheme === theme.id ? colors.accent : colors.textMuted }
+                ]}>
+                  {theme.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Animated.View>
+
         {/* Share Journey Button */}
         <Animated.View 
           entering={FadeInDown.delay(250).duration(800).springify()}
@@ -416,13 +461,6 @@ export default function Profile() {
           </TouchableOpacity>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(300).duration(800).springify()}>
-          <GoalProgressCard 
-            currentWeight={userData?.profile?.measurements?.weightKg || userData?.onboarding_weight || 0}
-            targetWeight={userData?.profile?.goals?.targetWeight || 0}
-            startWeight={userData?.onboarding_weight || userData?.profile?.measurements?.weightKg || 0}
-          />
-        </Animated.View>
 
         {/* Daily Journal Card */}
         <TouchableOpacity 
@@ -559,6 +597,7 @@ export default function Profile() {
             calorieLabel={userData?.profile?.goal === 'lose_weight' ? 'Kcal Burned' : 'Kcal Consumed'}
             days={lifetimeStats.daysActive}
             logs={lifetimeStats.totalLogs}
+            theme={selectedShareTheme}
           />
         </ViewShot>
       </View>
@@ -887,6 +926,39 @@ const styles = StyleSheet.create({
     marginTop: 6,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  themeSelector: {
+    paddingHorizontal: 24,
+    marginBottom: 20,
+  },
+  themeSelectorTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 12,
+    marginLeft: 4,
+  },
+  themePills: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  themePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    gap: 8,
+  },
+  themeColorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  themePillText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   shareContainer: {
     paddingHorizontal: 24,

@@ -20,41 +20,49 @@ export interface MacroPlan {
 export const calculateUserPlan = (user: UserProfile): MacroPlan => {
   const { gender, birthdate, weight, height, activityLevel, goal } = user;
 
-  // 1. Calculate Age
-  const birthDateObj = parse(birthdate, 'yyyy-MM-dd', new Date());
-  const age = differenceInYears(new Date(), birthDateObj);
+  // 1. Calculate Age with Safety Fallback
+  let age = 30; // Default fallback age
+  try {
+    const birthDateObj = parse(birthdate, 'yyyy-MM-dd', new Date());
+    age = differenceInYears(new Date(), birthDateObj);
+    if (isNaN(age)) age = 30; // Fallback for 'Invalid Date' result
+  } catch (e) {
+    console.error('[MacroEngine] Invalid birthdate format:', birthdate);
+  }
 
   // 2. BMR (Mifflin-St Jeor)
+  const lowerGender = gender?.toLowerCase() || 'male';
   let bmr: number;
-  if (gender.toLowerCase() === 'male' || gender.toLowerCase() === 'man') {
+  if (lowerGender === 'male' || lowerGender === 'man') {
     bmr = 10 * weight + 6.25 * height - 5 * age + 5;
   } else {
     bmr = 10 * weight + 6.25 * height - 5 * age - 161;
   }
 
   // 3. TDEE
+  const lowerActivity = activityLevel?.toLowerCase() || 'light';
   const multipliers: Record<string, number> = {
     light: 1.2,
     moderate: 1.55,
     active: 1.725,
   };
-  const multiplier = multipliers[activityLevel] || 1.2;
+  const multiplier = multipliers[lowerActivity] || 1.2;
   let tdee = bmr * multiplier;
 
   // 4. Goal Adjustment
-  if (goal === 'lose') {
+  const lowerGoal = goal?.toLowerCase() || 'maintain';
+  if (lowerGoal === 'lose') {
     tdee -= 400;
-  } else if (goal === 'gain') {
+  } else if (lowerGoal === 'gain') {
     tdee += 400;
   }
 
   // Safety Clamp
-  const minCalories = gender.toLowerCase() === 'male' ? 1500 : 1200;
-  const finalCalories = Math.max(Math.round(tdee), minCalories);
+  const finalCalories = Math.max(Math.round(tdee), lowerGender === 'male' ? 1500 : 1200);
 
   // 5. Macros
   // Protein: 2g/kg (gain), 1.6g/kg (others)
-  const proteinMultiplier = goal === 'gain' ? 2 : 1.6;
+  const proteinMultiplier = lowerGoal === 'gain' ? 2 : 1.6;
   const proteinGrams = Math.round(weight * proteinMultiplier);
   const proteinCalories = proteinGrams * 4;
 
@@ -71,11 +79,11 @@ export const calculateUserPlan = (user: UserProfile): MacroPlan => {
   let waterMl = weight * 35;
 
   // Activity Adjustment
-  if (activityLevel === 'light') {
+  if (lowerActivity === 'light') {
     waterMl += 400; // Average of +300-500
-  } else if (activityLevel === 'moderate') {
+  } else if (lowerActivity === 'moderate') {
     waterMl += 650; // Average of +500-800
-  } else if (activityLevel === 'active') {
+  } else if (lowerActivity === 'active') {
     waterMl += 1000; // Average of +800-1200
   }
 

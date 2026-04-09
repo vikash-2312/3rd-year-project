@@ -5,6 +5,7 @@ import {
   setDoc, 
   getDoc, 
   initializeFirestore,
+  Firestore,
   // @ts-ignore
   experimentalForceLongPolling
 } from "firebase/firestore";
@@ -23,9 +24,15 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 // Use initializeFirestore with long polling for better reliability in Expo Go/React Native
-const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-});
+// Wrapped in try/catch to prevent crash on hot-reload when Firestore is already initialized
+let db: Firestore;
+try {
+  db = initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+  });
+} catch (e) {
+  db = getFirestore(app);
+}
 
 export const saveUserToFirestore = async (userId: string, email: string, name?: string) => {
   try {

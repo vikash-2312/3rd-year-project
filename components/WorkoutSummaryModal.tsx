@@ -11,9 +11,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { 
   ChampionIcon, 
-  CheckmarkCircle01Icon, 
+  CheckmarkCircle02Icon, 
   FlashIcon, 
-  Share01Icon
+  Share02Icon
 } from '@hugeicons/core-free-icons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
@@ -74,11 +74,11 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
 
             <View style={styles.badgeRow}>
               <View style={styles.badge}>
-                <HugeiconsIcon icon={CheckmarkCircle01Icon} size={16} color="#009050" />
+                <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} color="#009050" />
                 <Text style={styles.badgeText}>PR Logged</Text>
               </View>
               <View style={styles.badge}>
-                <HugeiconsIcon icon={CheckmarkCircle01Icon} size={16} color="#009050" />
+                <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} color="#009050" />
                 <Text style={styles.badgeText}>Clean Form</Text>
               </View>
             </View>
@@ -94,7 +94,7 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.shareBtn}>
-              <HugeiconsIcon icon={Share01Icon} size={18} color="rgba(255,255,255,0.7)" />
+              <HugeiconsIcon icon={Share02Icon} size={18} color="rgba(255,255,255,0.7)" />
               <Text style={styles.shareBtnText}>Share Story</Text>
             </TouchableOpacity>
           </LinearGradient>

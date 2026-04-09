@@ -74,6 +74,9 @@ export const CaloriesCard = React.memo(({
             <HugeiconsIcon icon={BeefIcon} size={20} color={isDark ? '#FC8181' : '#E53E3E'} />
             <View style={styles.macroTextContainer}>
               <Text style={[styles.macroValue, { color: isDark ? '#FC8181' : '#E53E3E' }]}>{protein}g</Text>
+              <Text style={[styles.subValue, { color: (targetProtein - protein) < 0 ? '#E53E3E' : colors.textTertiary }]}>
+                {(targetProtein - protein) >= 0 ? `${targetProtein - protein}g left` : `${Math.abs(targetProtein - protein)}g over`}
+              </Text>
               <Text style={[styles.macroLabel, { color: colors.textTertiary }]}>Protein</Text>
             </View>
           </View>
@@ -84,6 +87,9 @@ export const CaloriesCard = React.memo(({
             <HugeiconsIcon icon={Bread01Icon} size={20} color={isDark ? '#FBD38D' : '#DD6B20'} />
             <View style={styles.macroTextContainer}>
               <Text style={[styles.macroValue, { color: isDark ? '#FBD38D' : '#DD6B20' }]}>{carbs}g</Text>
+              <Text style={[styles.subValue, { color: (targetCarbs - carbs) < 0 ? '#E53E3E' : colors.textTertiary }]}>
+                {(targetCarbs - carbs) >= 0 ? `${targetCarbs - carbs}g left` : `${Math.abs(targetCarbs - carbs)}g over`}
+              </Text>
               <Text style={[styles.macroLabel, { color: colors.textTertiary }]}>Carbs</Text>
             </View>
           </View>
@@ -94,6 +100,9 @@ export const CaloriesCard = React.memo(({
             <HugeiconsIcon icon={AvocadoIcon} size={20} color={isDark ? '#4FD1C5' : '#38B2AC'} />
             <View style={styles.macroTextContainer}>
               <Text style={[styles.macroValue, { color: isDark ? '#4FD1C5' : '#38B2AC' }]}>{fats}g</Text>
+              <Text style={[styles.subValue, { color: (targetFats - fats) < 0 ? '#E53E3E' : colors.textTertiary }]}>
+                {(targetFats - fats) >= 0 ? `${targetFats - fats}g left` : `${Math.abs(targetFats - fats)}g over`}
+              </Text>
               <Text style={[styles.macroLabel, { color: colors.textTertiary }]}>Fats</Text>
             </View>
           </View>
@@ -162,8 +171,15 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   macroLabel: {
-    fontSize: 10,
+    fontSize: 9,
     color: '#718096',
-    marginTop: 2,
+    marginTop: 1,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  subValue: {
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: -1,
   }
 });

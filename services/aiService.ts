@@ -9,6 +9,7 @@
 import { UserMemory } from './memoryService';
 
 export interface ChatMessage {
+  id: string; // Unique ID for stable indexing
   role: 'user' | 'ai';
   content: string;
   timestamp: number;
@@ -38,6 +39,7 @@ export interface AIResponse {
 }
 
 export interface UserContext {
+  userId: string; // The active user unique ID
   goal: string;
   weight: number;
   dailyCalories: number;
@@ -47,17 +49,21 @@ export interface UserContext {
   fats: number;
   water: number;
   exerciseMinutes: number;
+  steps?: number;
+  targetSteps?: number;
   memory: UserMemory;
   recentMessages: ChatMessage[];
   onboarding?: any; // Full profile object
   todayLogs?: any[]; // Full detailed logs for today
   weeklySummary?: any[]; // 7-day compact summary (Target vs Actual)
+  historicalLogs?: any[]; // The raw array of every specific log over the timeline
 }
 
 // --- Constants ---
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:streamGenerateContent?key=${GEMINI_API_KEY}`;
 const MAX_RETRIES = 2;
 const USE_MOCK_AI = false; // Set true for offline testing
 
@@ -72,26 +78,40 @@ const CACHE_MAX = 5;
  * assistant that interprets data and gives actionable advice — never
  * dumps raw numbers.
  */
-function buildSystemPrompt(context: UserContext): string {
+function buildSystemPrompt(context: UserContext, intelligenceMode: 'lightning' | 'pro' = 'lightning'): string {
   const memoryBlock = [
     context.memory.allergies.length
-      ? `Allergies: ${context.memory.allergies.join(', ')}`
+      ? `🚨 Allergies: ${context.memory.allergies.join(', ')}`
       : null,
-    context.memory.diet ? `Diet Preference: ${context.memory.diet}` : null,
-    context.memory.dislikes.length
-      ? `Food Dislikes: ${context.memory.dislikes.join(', ')}`
+    context.memory.diet_preference ? `🥗 Diet Preference: ${context.memory.diet_preference}` : null,
+    context.memory.disliked_foods.length
+      ? `🚫 Food Dislikes: ${context.memory.disliked_foods.join(', ')}`
+      : null,
+    context.memory.habits.length
+      ? `🔄 Daily Habits: ${context.memory.habits.join(', ')}`
+      : null,
+    context.memory.weak_points.length
+      ? `⚠️ Weak Points/Triggers: ${context.memory.weak_points.join(', ')}`
       : null,
     context.memory.conditions.length
-      ? `Health Conditions: ${context.memory.conditions.join(', ')}`
+      ? `🏥 Health Conditions: ${context.memory.conditions.join(', ')}`
       : null,
+    context.memory.personality_pref ? `🎭 Coaching Style: ${context.memory.personality_pref}` : null,
+    context.memory.complexity_pref ? `🍳 Cooking/Complexity: ${context.memory.complexity_pref}` : null,
+    context.memory.meal_timing ? `⏰ Meal Timing: ${context.memory.meal_timing}` : null,
+    context.memory.unstructured_bio ? `📖 AI Observations: ${context.memory.unstructured_bio}` : null,
   ]
     .filter(Boolean)
     .join('\n');
 
   const chatHistoryBlock = context.recentMessages
-    .slice(-5)
+    .slice(-15)
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n');
+
+  const totalDaysSpan = context.weeklySummary?.length || 7;
+  const activeDays = context.weeklySummary?.filter(d => d.hasLogs).length || 0;
+  const historicalLogsCount = context.historicalLogs?.length || 0;
 
   return `You are the lead health coach at Ai-cal-track, a premium fitness platform. You work alongside a high-precision medical macro engine. Your tone is supportive, expert, and highly actionable.
 
@@ -99,15 +119,16 @@ function buildSystemPrompt(context: UserContext): string {
 - Profile: ${JSON.stringify(context.onboarding || {})}
 - Goal: ${context.dailyCalories} kcal
 - Current: ${context.consumedCalories} kcal
-- Protein: ${context.protein}g actual / ${context.onboarding?.targetProtein || '??'}g target
-- Carbs: ${context.carbs}g actual / ${context.onboarding?.targetCarbs || '??'}g target
-- Fats: ${context.fats}g actual / ${context.onboarding?.targetFats || '??'}g target
+- Protein: ${context.protein}g actual / ${context.onboarding?.macros?.proteinGrams || '??'}g target
+- Carbs: ${context.carbs}g actual / ${context.onboarding?.macros?.carbsGrams || '??'}g target
+- Fats: ${context.fats}g actual / ${context.onboarding?.macros?.fatsGrams || '??'}g target
 - Today's Logs: ${JSON.stringify(context.todayLogs || [])}
 
-═══ 7-DAY CONSISTENCY LOG ═══
+═══ ${totalDaysSpan}-DAY CONSISTENCY LOG ═══
 ${(context.weeklySummary || []).length > 0
       ? context.weeklySummary!.map(day => `- ${day.date}: ${day.actualCalories}/${day.targetCalories} kcal | ${day.actualProtein}/${day.targetProtein}g Protein`).join('\n')
       : 'No history available.'}
+${activeDays < 3 && totalDaysSpan > 7 ? "\nℹ️ NOTE: This is a relatively new user. They have only logged on " + activeDays + " days so far. Avoid referencing long-term trends; focus on building early momentum." : ""}
 
 ═══ YOUR CORE PROTOCOL ═══
 1. NO DATA DUMPS: Never repeat lists of numbers unless the user EXPLICITLY asks ("show me my logs").
@@ -119,9 +140,12 @@ ${(context.weeklySummary || []).length > 0
 4. ACTION ORIENTED: Always provide 2-3 specific, clear bullet points on "What to do next".
 5. SMART TONE: Use natural phrases like "Here's where you stand 👇" or "Let's adjust focus to...".
 6. EMOJIS: Use emojis (👉, 💧, 🔥, 💪, 🎯) to improve readability.
+7. 🔴 MEDICAL SAFETY GUARDRAIL: You are a fitness coach, NOT a doctor. 
+   - NEVER suggest specific medication dosages (e.g. Ozempic, Ibuprofen).
+   - NEVER diagnose medical conditions (e.g. "You have diabetes").
+   - IF asked for medical advice, provide a helpful general fitness tip but include a mandatory disclaimer: "Please consult with a medical professional for advice on [medication/condition] as I am an AI fitness coach."
 
 ═══ USER BIO ═══
-- Profile: ${JSON.stringify(context.onboarding || {})}
 - Metric Target: ${context.dailyCalories} kcal
 - Current Intake: ${context.consumedCalories} kcal (${Math.round((context.consumedCalories / (context.dailyCalories || 1)) * 100)}%)
 
@@ -148,14 +172,21 @@ Every entry in the "actions" array MUST follow this exact nested structure:
 - log_water: { "type": "log_water", "data": { "waterLiters": number } }
 - log_exercise: { "type": "log_exercise", "data": { "name": string, "duration": number, "calories": number, "intensity": "Low | Medium | High" } }
 - update_calories: { "type": "update_calories", "data": { "adjustment": number, "reason": string } }
-- undo_log: { "type": "undo_log", "data": {} }
+- undo_log: { "type": "undo_log", "data": { "type": "food | water | exercise" (optional) } }
 
 🔴 STOP & SPLIT CHECKLIST (Mandatory):
 1. Multiple foods? (Roti + Sabji). -> YES? Use 2 SEPARATE log_food actions.
 2. Supplement? (Creatine, Protein). -> YES? Use a SEPARATE log_food action.
 3. Goal change? (e.g. Add 200 kcal). -> YES? Use an update_calories action.
-4. Preferences? User mentions they are vegan, allergic to peanuts, etc. -> YES? Output a "memory_update" object.
+4. Preferences? User mentions they are vegan, allergic to peanuts, or you observe a personality trait (hates being nagged, prefers data). -> YES? Output a "memory_update" object.
 5. User says "undo", "delete that", or "made a mistake"? -> YES? Use the undo_log action.
+
+🔴 THE LEARNING PROTOCOL (SILENT MEMORY):
+- If the user says "I don't have time to cook", update "complexity_pref" to "High-speed/No-prep".
+- If the user seems scientific or asks for specific reasons, update "personality_pref" to "Data-Driven".
+- If the user is apologetic about gaps, update "personality_pref" to "Supportive/Gentle".
+- If the user says "stop nagging me" or "shorter please", update "personality_pref" to "Direct/Minimalist".
+- Log these SILENTLY in the "memory_update" JSON. Do not confirm with the user.
 
 🚫 NEVER group items. One card per action. This is critical for UI quality.
 🚫 NO AUTO-LOGGING: Never trigger a "log_food" action for items you are ONLY suggesting. Only log if the user explicitly confirms they ate it or asked you to log it right now.
@@ -175,9 +206,11 @@ Respond with a JSON object:
   "response": "Insight text...",
   "memory_update": {
     "allergies": ["peanuts"],
-    "diet": "vegan",
-    "dislikes": [],
-    "conditions": []
+    "diet_preference": "vegan",
+    "personality_pref": "Scientific/Data-Driven",
+    "complexity_pref": "Quick/Minimalist",
+    "meal_timing": "Intermittent Fasting",
+    "unstructured_bio": "User seems highly focused on protein density this month."
   },
   "actions": [ 
     { "type": "log_food", "data": { "name": "Roti", "calories": 300, "protein": 8, "carbs": 60, "fat": 4, "serving": "4 roti" } },
@@ -188,7 +221,10 @@ Respond with a JSON object:
     { "label": "Suggest Meal 🍽️", "message": "Suggest a meal" },
     { "label": "Water Tracker 💧", "message": "Log 250ml water" }
   ]
-}`;
+}` + (intelligenceMode === 'pro' 
+      ? "\n\n═══ INTELLIGENCE MODE: PRO 🧠 ═══\nYou have access to up to 30 days of the user's history. Be meticulous. Cross-reference their historical data against their goal, look for behavioral trends, and provide expert, highly detailed coaching." + 
+        ((context.historicalLogs?.length || 0) > 0 ? `\n\n═══ 30-DAY RAW LOG DIARY ═══\n${context.historicalLogs!.map(l => `- [${l.date}] ${l.type.toUpperCase()}: ${l.name || 'Activity'} (${l.calories || 0} kcal, ${l.protein || 0}g protein)`).join('\n')}` : "")
+      : "\n\n═══ INTELLIGENCE MODE: LIGHTNING ⚡ ═══\nRespond in 1-2 short sentences. Do not perform deep psychological analysis. Focus strictly on answering the user's immediate question or executing their command as fast as possible.");
 }
 
 // --- Mock AI ---
@@ -262,7 +298,8 @@ function getMockResponse(message: string): AIResponse {
 export async function sendToGemini(
   userMessage: string,
   context: UserContext,
-  imageBase64?: string
+  imageBase64?: string,
+  intelligenceMode: 'lightning' | 'pro' = 'lightning'
 ): Promise<AIResponse> {
   // Mock mode for testing
   if (USE_MOCK_AI) {
@@ -281,7 +318,7 @@ export async function sendToGemini(
     throw new Error('Gemini API key is missing. Set EXPO_PUBLIC_GEMINI_API_KEY in .env');
   }
 
-  const systemPrompt = buildSystemPrompt(context);
+  const systemPrompt = buildSystemPrompt(context, intelligenceMode);
   const fullPrompt = `${systemPrompt}\n\nUser message: "${userMessage}"\n\nRespond with ONLY valid JSON:`;
 
   let lastError: Error | null = null;
@@ -350,6 +387,93 @@ export async function sendToGemini(
   }
 
   throw lastError || new Error('Failed to get AI response after retries');
+}
+
+/**
+ * Streaming version of sendToGemini.
+ * Calls onTextUpdate with partial text chunks as they arrive.
+ */
+export async function sendToGeminiStreaming(
+  userMessage: string,
+  context: UserContext,
+  onTextUpdate: (text: string) => void,
+  imageBase64?: string,
+  intelligenceMode: 'lightning' | 'pro' = 'lightning'
+): Promise<AIResponse> {
+  if (USE_MOCK_AI) {
+    const mock = getMockResponse(userMessage);
+    onTextUpdate(mock.response);
+    return mock;
+  }
+
+  const systemPrompt = buildSystemPrompt(context, intelligenceMode);
+  const fullPrompt = `${systemPrompt}\n\nUser message: "${userMessage}"\n\nRespond with ONLY valid JSON:`;
+
+  const parts: any[] = [{ text: fullPrompt }];
+  if (imageBase64) {
+    parts.push({ inlineData: { mimeType: "image/jpeg", data: imageBase64 } });
+  }
+
+  const response = await fetch(GEMINI_STREAM_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents: [{ parts }] }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gemini Stream Error: ${response.statusText}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    // Fallback to non-streaming if reader is unavailable
+    return sendToGemini(userMessage, context, imageBase64, intelligenceMode);
+  }
+
+  let fullText = '';
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    buffer += chunk;
+
+    // Gemini streaming returns a JSON array. We need to parse individual objects or chunks.
+    // This is a simplified parser for the typical Gemini response format.
+    try {
+      // 1. First, look for completed candidates in the array
+      const matches = Array.from(buffer.matchAll(/\{"candidates":[\s\S]*?\}(?=\s*,\s*\{|\s*\])/g));
+      for (const match of matches) {
+        try {
+          const obj = JSON.parse(match[0]);
+          const text = obj?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) fullText += text;
+        } catch (e) { /* partial chunk, ignore */ }
+      }
+
+      // 2. High-performance "live" extraction for the "response" property
+      // This allows character-by-character updates even BEFORE the JSON candidate is finished
+      const responseMatch = buffer.match(/"response"\s*:\s*"((?:[^"\\]|\\.)*)/);
+      if (responseMatch) {
+        let partial = responseMatch[1];
+        // Clean up partial JSON escape characters for live display
+        partial = partial
+          .replace(/\\n/g, '\n')
+          .replace(/\\"/g, '"')
+          .replace(/\\t/g, '  ')
+          .replace(/\\r/g, '')
+          .replace(/\\\\/g, '\\');
+        onTextUpdate(partial);
+      }
+    } catch (e) {
+      // Incomplete JSON, continue reading
+    }
+  }
+
+  return parseAIResponse(fullText);
 }
 
 /**

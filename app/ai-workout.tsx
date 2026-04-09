@@ -566,7 +566,12 @@ Return ONLY a valid JSON object:
   const normalizeArray = (data: any): any[] => {
     if (!data) return [];
     if (Array.isArray(data)) return data;
-    if (typeof data === 'object') return Object.values(data);
+    if (typeof data === 'object') {
+      // Sort by numeric key to preserve intended ordering from AI
+      return Object.keys(data)
+        .sort((a, b) => Number(a) - Number(b))
+        .map(key => data[key]);
+    }
     return [];
   };
 

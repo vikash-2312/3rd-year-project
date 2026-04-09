@@ -5,6 +5,7 @@ import { Button } from '../../components/Button';
 import { useUser } from '@clerk/expo';
 import { InputField } from '../../components/InputField';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isValid, parse, isBefore, isAfter, subYears, differenceInYears } from 'date-fns';
 
 export default function Step4Birthdate() {
   const router = useRouter();
@@ -13,7 +14,29 @@ export default function Step4Birthdate() {
   const [month, setMonth] = useState('');
   const [year, setYear] = useState('');
 
-  const isValidDate = day.length > 0 && month.length > 0 && year.length === 4;
+  const { isValidDate, dateError } = React.useMemo(() => {
+    if (day.length === 0 || month.length === 0 || year.length !== 4) {
+      return { isValidDate: false, dateError: null };
+    }
+    
+    const dateString = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    const parsedDate = parse(dateString, 'yyyy-MM-dd', new Date());
+    
+    if (!isValid(parsedDate)) {
+      return { isValidDate: false, dateError: 'That date doesn’t exist' };
+    }
+    
+    const today = new Date();
+    if (isAfter(parsedDate, today)) {
+      return { isValidDate: false, dateError: 'Birthdate must be in the past' };
+    }
+    
+    const age = differenceInYears(today, parsedDate);
+    if (age < 5) return { isValidDate: false, dateError: 'Must be at least 5 years old' };
+    if (age > 110) return { isValidDate: false, dateError: 'Please enter a valid age' };
+    
+    return { isValidDate: true, dateError: null };
+  }, [day, month, year]);
 
   const handleNext = async () => {
     if (isValidDate && user?.id) {
@@ -32,6 +55,9 @@ export default function Step4Birthdate() {
         <View style={styles.header}>
           <Text style={styles.title}>When’s your birthday?</Text>
           <Text style={styles.subtitle}>This helps our AI calculate your metabolism accurately</Text>
+          {dateError && (
+            <Text style={styles.errorText}>{dateError}</Text>
+          )}
         </View>
 
         <View style={styles.inputRow}>
@@ -144,5 +170,12 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 40,
+  },
+  errorText: {
+    color: '#E53E3E',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 12,
   }
 });

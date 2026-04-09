@@ -1,666 +1,847 @@
-/**
- * ai-coach.tsx
- *
- * Premium AI Fitness Coach chat screen.
- * Features: smart formatted bubbles, contextual quick-action buttons,
- * animated typing indicator, action badges, and suggested prompts.
- */
-
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  ArrowLeft01Icon,
-  SentIcon,
-  SparklesIcon,
-  Delete02Icon,
-  PencilEdit02Icon,
-  Camera01Icon,
-  Cancel01Icon,
-} from '@hugeicons/core-free-icons';
-import { HugeiconsIcon } from '@hugeicons/react-native';
-import * as ImagePicker from 'expo-image-picker';
-import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
-import Reanimated, { FadeInRight, FadeInLeft, Layout } from 'react-native-reanimated';
-import { ScanOverlay } from '../components/ScanOverlay';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Animated as RNAnimated,
-  Dimensions,
-  FlatList,
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
+  View,
   Text,
+  StyleSheet,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
   Image,
+  Alert,
+  Keyboard,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import * as FileSystem from 'expo-file-system';
+import { format, subDays } from 'date-fns';
+import * as Clipboard from 'expo-clipboard';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useUser } from '@clerk/expo';
+import { 
+  ArrowLeft01Icon, 
+  Settings02Icon, 
+  Camera01Icon, 
+  ArrowRight01Icon, 
+  SparklesIcon, 
+  CheckmarkCircle02Icon,
+  FlashIcon,
+  ArtificialIntelligence01Icon,
+  VolumeHighIcon,
+  VolumeMute01Icon,
+  Note01Icon // Using Note01Icon as a stable 'Copy' alternative for build compatibility
+} from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+import * as Speech from 'expo-speech';
+import Animated, { 
+  FadeInDown, 
+  FadeInUp, 
+  Layout, 
+  useAnimatedStyle, 
+  withSpring, 
+  withSequence, 
+  withTiming,
+  withRepeat,
+  withDelay,
+  useSharedValue
+} from 'react-native-reanimated';
+import { 
+  doc, 
+  onSnapshot, 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  limit, 
+  getDocs,
+  addDoc,
+  serverTimestamp,
+  Timestamp 
+} from 'firebase/firestore';
+
+import { db } from '../lib/firebase';
 import { useTheme } from '../lib/ThemeContext';
-import { useChat } from '../hooks/useChat';
+import { processMessageStreaming, ProcessedResult } from '../services/chatService';
 import { ChatMessage } from '../services/aiService';
+import { uploadChatImage } from '../services/chatStorageService';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+// Fixed Type for local use
+interface LocalChatMessage extends ChatMessage {
+  image?: string;
+}
 
-// --- Suggested Prompts (shown in empty state) ---
-const SUGGESTED_PROMPTS = [
-  { text: "How are my macros? 📊", icon: "📊" },
-  { text: "Suggest a meal 🍽️", icon: "🍽️" },
-  { text: "Fix my protein 💪", icon: "💪" },
-  { text: "Generate meal plan 📋", icon: "📋" },
-  { text: "Set calorie goal 🎯", icon: "🎯" },
-  { text: "Water status 💧", icon: "💧" },
-];
+// --- High Fidelity Markdown Formatter (Custom) ---
+const FormattedText = ({ text, color }: { text: string; color: string }) => {
+  if (!text) return null;
+  
+  // High-performance regex to split by bold (**text**)
+  const segments = text.split(/(\*\*.*?\*\*)/g);
+  
+  return (
+    <Text style={[styles.messageText, { color }]}>
+      {segments.map((segment, i) => {
+        if (segment.startsWith('**') && segment.endsWith('**')) {
+          return (
+            <Text key={i} style={{ fontWeight: '800' }}>
+              {segment.slice(2, -2)}
+            </Text>
+          );
+        }
+        return <Text key={i}>{segment}</Text>;
+      })}
+    </Text>
+  );
+};
 
-// --- Typing Indicator Component ---
-function TypingIndicator({ colors }: { colors: any }) {
-  const dot1 = useRef(new RNAnimated.Value(0)).current;
-  const dot2 = useRef(new RNAnimated.Value(0)).current;
-  const dot3 = useRef(new RNAnimated.Value(0)).current;
-
-  useEffect(() => {
-    const animate = (dot: RNAnimated.Value, delay: number) => {
-      return RNAnimated.loop(
-        RNAnimated.sequence([
-          RNAnimated.delay(delay),
-          RNAnimated.timing(dot, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-          RNAnimated.timing(dot, {
-            toValue: 0,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-        ]),
+// --- High Fidelity Typing Indicator Component ---
+const TypingIndicator = ({ color }: { color: string }) => {
+  const Dot = ({ delay }: { delay: number }) => {
+    const scale = useSharedValue(1);
+    useEffect(() => {
+      scale.value = withRepeat(
+        withSequence(
+          withDelay(delay, withSpring(1.5, { damping: 2 })),
+          withSpring(1, { damping: 2 })
+        ),
+        -1,
+        false
       );
+    }, []);
+    const style = useAnimatedStyle(() => ({
+      transform: [{ scale: scale.value }],
+      opacity: (scale.value - 1) * 2 + 0.5
+    }));
+    return <Animated.View style={[styles.typingDot, { backgroundColor: color }, style]} />;
+  };
+
+  return (
+    <View style={styles.typingContainer}>
+      <Dot delay={0} />
+      <Dot delay={150} />
+      <Dot delay={300} />
+    </View>
+  );
+};
+
+export default function AICoachScreen() {
+  const { initialMessage } = useLocalSearchParams<{ initialMessage?: string }>();
+  const router = useRouter();
+  const { user } = useUser();
+  const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+
+  const [messages, setMessages] = useState<LocalChatMessage[]>([]);
+  const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [intelligenceMode, setIntelligenceMode] = useState<'lightning' | 'pro'>('lightning');
+  const [isTyping, setIsTyping] = useState(false);
+  const [userData, setUserData] = useState<any>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [historicalLogs, setHistoricalLogs] = useState<any[]>([]);
+  const [todayLogs, setTodayLogs] = useState<any[]>([]);
+  const [weeklySummary, setWeeklySummary] = useState<any[]>([]);
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [isListReady, setIsListReady] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  const flatListRef = useRef<FlatList>(null);
+  const isAutoStarted = useRef(false);
+  const isNearBottom = useRef(true);
+  const isFirstLoad = useRef(true);
+  const lastFailedMessage = useRef<string>('');
+  const isStreamingRef = useRef(false);
+
+  // --- Fetch User Context for AI ---
+  useEffect(() => {
+    if (!user) return;
+
+    // Listen to profile
+    const unsubUser = onSnapshot(doc(db, 'users', user.id), (docSnap) => {
+      if (docSnap.exists()) {
+        const fullData = docSnap.data();
+        setUserData({
+          userId: user.id,
+          goal: fullData.profile?.goal || 'maintain',
+          weight: fullData.profile?.measurements?.weightKg || 70,
+          dailyCalories: fullData.profile?.macros?.dailyCalories || 2000,
+          protein: fullData.profile?.macros?.proteinGrams || 150,
+          carbs: fullData.profile?.macros?.carbsGrams || 200,
+          fats: fullData.profile?.macros?.fatsGrams || 60,
+          water: fullData.profile?.macros?.waterIntakeLiters || 2.5,
+          onboarding: fullData.onboarding || {},
+        });
+      }
+    });
+
+    return () => unsubUser();
+  }, [user]);
+
+  // --- Global Chat Persistence Loader ---
+  useEffect(() => {
+    if (!user) return;
+
+    const chatRef = collection(db, 'users', user.id, 'chat_history');
+    const q = query(chatRef, orderBy('timestamp', 'asc'), limit(50));
+
+    const unsubChat = onSnapshot(q, (snapshot) => {
+      const historyItems = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          role: data.role,
+          content: data.content,
+          timestamp: data.timestamp?.toMillis() || Date.now(),
+          image: data.image,
+          actionStatus: data.actionStatus,
+          quickActions: data.quickActions,
+        } as LocalChatMessage;
+      });
+      // Don't override local state during active AI streaming to prevent
+      // optimistic updates (placeholder messages) from being clobbered
+      if (!isStreamingRef.current) {
+        setMessages(historyItems);
+      }
+    });
+
+    return () => unsubChat();
+  }, [user]);
+
+  // --- Fetch Historical Context for PRO mode ---
+  useEffect(() => {
+    if (!user || intelligenceMode !== 'pro') {
+      setHistoricalLogs([]);
+      return;
+    }
+
+    const fetchHistory = async () => {
+      try {
+        const thirtyDaysAgo = subDays(new Date(), 21); // 3 weeks is often better for immediate trends
+        const q = query(
+          collection(db, 'logs'),
+          where('userId', '==', user.id),
+          where('date', '>=', format(thirtyDaysAgo, 'yyyy-MM-dd')),
+          orderBy('date', 'desc'),
+          limit(50) // Strong limit for ultra-fast prompt processing
+        );
+        const snap = await getDocs(q);
+        const logs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setHistoricalLogs(logs);
+      } catch (error) {
+        console.error('[AICoach] History fetch failed:', error);
+      }
     };
 
-    const a1 = animate(dot1, 0);
-    const a2 = animate(dot2, 150);
-    const a3 = animate(dot3, 300);
+    fetchHistory();
+  }, [user, intelligenceMode]);
 
-    a1.start();
-    a2.start();
-    a3.start();
+  // --- Real-time Todays Logs for Live Context ---
+  useEffect(() => {
+    if (!user) return;
 
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const q = query(
+      collection(db, 'logs'),
+      where('userId', '==', user.id),
+      where('date', '==', todayStr)
+    );
+
+    const unsubLogs = onSnapshot(q, (snapshot) => {
+      const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setTodayLogs(logs);
+    });
+
+    return () => unsubLogs();
+  }, [user]);
+
+  // --- 7-Day Consistency Snapshot for AI awareness ---
+  useEffect(() => {
+    if (!user) return;
+
+    // We fetch last 7 days of logs to build a consistency map
+    const sevenDaysAgo = subDays(new Date(), 7);
+    const q = query(
+      collection(db, 'logs'),
+      where('userId', '==', user.id),
+      where('date', '>=', format(sevenDaysAgo, 'yyyy-MM-dd'))
+    );
+
+    const unsubWeekly = onSnapshot(q, (snapshot) => {
+      const logs = snapshot.docs.map(doc => doc.data());
+      const summaryMap: Record<string, any> = {};
+
+      // Initialize last 7 days
+      for (let i = 0; i < 7; i++) {
+        const d = format(subDays(new Date(), i), 'yyyy-MM-dd');
+        summaryMap[d] = { date: d, actualCalories: 0, actualProtein: 0, targetCalories: userData?.dailyCalories || 2000, targetProtein: userData?.protein || 150, hasLogs: false };
+      }
+
+      logs.forEach(log => {
+        if (summaryMap[log.date] && log.type === 'food') {
+          summaryMap[log.date].actualCalories += Number(log.calories || 0);
+          summaryMap[log.date].actualProtein += Number(log.protein || 0);
+          summaryMap[log.date].hasLogs = true;
+        }
+      });
+
+      setWeeklySummary(Object.values(summaryMap).sort((a, b) => b.date.localeCompare(a.date)));
+    });
+
+    return () => unsubWeekly();
+  }, [user, userData?.dailyCalories]);
+
+  // --- Derived Live Stats for AI ---
+  const liveContext = useMemo(() => {
+    const stats = {
+      consumedCalories: 0,
+      protein: 0,
+      carbs: 0,
+      fats: 0,
+      water: 0,
+      exerciseMinutes: 0,
+    };
+
+    todayLogs.forEach(log => {
+      if (log.type === 'food') {
+        stats.consumedCalories += Number(log.calories || 0);
+        stats.protein += Number(log.protein || 0);
+        stats.carbs += Number(log.carbs || 0);
+        stats.fats += Number(log.fat || 0);
+      } else if (log.type === 'water') {
+        stats.water += Number(log.waterLiters || 0);
+      } else if (log.type === 'exercise') {
+        stats.exerciseMinutes += Number(log.duration || 0);
+      }
+    });
+
+    return stats;
+  }, [todayLogs]);
+
+  // --- Handle Auto-Message from Dashboard ---
+  useEffect(() => {
+    if (initialMessage && userData && !isAutoStarted.current) {
+      isAutoStarted.current = true;
+      handleSendMessage(initialMessage);
+    }
+  }, [initialMessage, userData]);
+
+  // --- Voice Lifecycle Cleanup ---
+  useEffect(() => {
     return () => {
-      a1.stop();
-      a2.stop();
-      a3.stop();
+      Speech.stop();
     };
   }, []);
 
-  const dotStyle = (anim: RNAnimated.Value) => ({
-    opacity: anim.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }),
-    transform: [
-      {
-        translateY: anim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0, -4],
-        }),
-      },
-    ],
-  });
-
-  return (
-    <View style={[styles.typingRow]}>
-      <View style={[styles.aiAvatar, { backgroundColor: colors.accentLight }]}>
-        <HugeiconsIcon icon={SparklesIcon} size={14} color={colors.accent} />
-      </View>
-      <View style={[styles.typingBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <RNAnimated.View style={[styles.dot, { backgroundColor: colors.accent }, dotStyle(dot1)]} />
-        <RNAnimated.View style={[styles.dot, { backgroundColor: colors.accent }, dotStyle(dot2)]} />
-        <RNAnimated.View style={[styles.dot, { backgroundColor: colors.accent }, dotStyle(dot3)]} />
-      </View>
-    </View>
-  );
-}
-
-// --- Smart Text Formatter ---
-// Renders AI response text with proper formatting: bold sections, bullet points, spacing
-function FormattedText({ text = '', color }: { text?: string; color: string }) {
-  if (!text) return null;
-  const lines = text.split('\n');
-
-  const renderContent = (content: string, isHeader = false) => {
-    const parts = content.split(/(\*\*.*?\*\*|\*.*?\*)/g);
-    return parts.map((part, index) => {
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return (
-          <Text key={index} style={{ fontWeight: '800', ...(isHeader && { fontSize: 18 }) }}>
-            {part.slice(2, -2)}
-          </Text>
-        );
+  // --- Keyboard UX Fix ---
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', () => {
+      if (isNearBottom.current) {
+        flatListRef.current?.scrollToEnd({ animated: true });
       }
-      if (part.startsWith('*') && part.endsWith('*') && !part.startsWith('**')) {
-        return (
-          <Text key={index} style={{ fontStyle: 'italic', ...(isHeader && { fontSize: 18 }) }}>
-            {part.slice(1, -1)}
-          </Text>
-        );
-      }
-      return <Text key={index} style={isHeader ? { fontSize: 18 } : {}}>{part}</Text>;
     });
+
+    return () => {
+      showSubscription.remove();
+    };
+  }, []);
+
+  // Ensure we are at the bottom on first data load
+  useEffect(() => {
+    if (messages.length > 0 && isFirstLoad.current) {
+      // Jump immediately without animation
+      flatListRef.current?.scrollToEnd({ animated: false });
+      
+      // Secondary jump to ensure we caught the full layout
+      const timer = setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+        isFirstLoad.current = false;
+        setIsListReady(true);
+      }, 32); // ~2 frames
+      
+      return () => clearTimeout(timer);
+    }
+  }, [messages.length]);
+
+  // --- Adaptive Intelligence Toggling ---
+  const detectComplexity = (text: string): boolean => {
+    const complexKeywords = [
+      'trend', 'average', 'weekly', 'monthly', 'last 7 days', 'last 30 days',
+      'stall', 'plateau', 'comparison', 'history', 'progress', 'consistent',
+      'patterns', 'breakdown', 'why', 'analyze', 'audit'
+    ];
+    const lowercase = text.toLowerCase();
+    return complexKeywords.some(kw => lowercase.includes(kw));
   };
 
-  return (
-    <View>
-      {lines.map((line, i) => {
-        const trimmed = line.trim();
-        if (!trimmed) return <View key={i} style={{ height: 12 }} />;
+  const handleSendMessage = async (text: string = inputText, imageUri?: string) => {
+    // Interrupt current speech if user sends new message
+    Speech.stop();
+    
+    // If no imageUri passed explicitly, check selectedImage state
+    const resolvedImageUri = imageUri || selectedImage || undefined;
+    
+    const messageToSend = text.trim();
+    if (!messageToSend && !resolvedImageUri) return;
+    if (!user || !userData) return;
+    
+    // Store for retry in case of failure
+    lastFailedMessage.current = messageToSend;
 
-        // Header detection
-        let isHeader = false;
-        let headerPrefixLength = 0;
-        if (trimmed.startsWith('### ')) { isHeader = true; headerPrefixLength = 4; }
-        else if (trimmed.startsWith('## ')) { isHeader = true; headerPrefixLength = 3; }
-        else if (trimmed.startsWith('# ')) { isHeader = true; headerPrefixLength = 2; }
-
-        // Heading lines (start with emoji + text, like "👉 Quick fixes:")
-        const isHeading = /^[👉💧⚡🔥💪🎯⚠️📋🌅🌞🌙🍎✅]/.test(trimmed) || isHeader;
-        // Bullet points
-        const isBullet = trimmed.startsWith('•') || trimmed.startsWith('-');
-
-        if (isBullet) {
-          return (
-            <View key={i} style={styles.bulletRow}>
-              <Text style={[styles.bulletDot, { color }]}>•</Text>
-              <Text style={[styles.bulletText, { color }]}>
-                {renderContent(trimmed.replace(/^[•\-]\s*/, '').replace(/^\*\s*/, ''))}
-              </Text>
-            </View>
-          );
-        }
-
-        const rawText = isHeader ? trimmed.substring(headerPrefixLength) : trimmed;
-
-        return (
-          <Text
-            key={i}
-            style={[
-              styles.messageText,
-              { color },
-              isHeading && styles.messageHeading,
-              isHeader && { fontSize: 18, marginBottom: 4 }
-            ]}>
-            {renderContent(rawText, isHeader)}
-          </Text>
+    // --- Adaptive IQ Logic ---
+    let currentIntelligence = intelligenceMode;
+    if (currentIntelligence === 'lightning' && detectComplexity(messageToSend)) {
+      currentIntelligence = 'pro';
+      setIntelligenceMode('pro');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // We don't need to await the history fetch here because processMessageStreaming
+      // will be called with the updated mode and we pass historicalLogs directly.
+      // However, we should fetch immediately if logs are empty.
+      if (historicalLogs.length === 0) {
+        const thirtyDaysAgo = subDays(new Date(), 30);
+        const q = query(
+          collection(db, 'logs'),
+          where('userId', '==', user.id),
+          where('date', '>=', format(thirtyDaysAgo, 'yyyy-MM-dd')),
+          orderBy('date', 'desc'),
+          limit(100)
         );
-      })}
-    </View>
-  );
-}
+        const snap = await getDocs(q);
+        const logs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setHistoricalLogs(logs);
+      }
+    }
 
-// --- Quick Action Buttons ---
-function QuickActionButtons({
-  actions = [],
-  onPress,
-  colors,
-  isDark,
-}: {
-  actions?: { label: string; message: string }[];
-  onPress: (message: string) => void;
-  colors: any;
-  isDark: boolean;
-}) {
-  if (!actions || actions.length === 0) return null;
-  return (
-    <View style={styles.quickActionsContainer}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.quickActionsScroll}>
-        {actions.map((action, index) => (
-          <TouchableOpacity
-            key={index}
-            style={[
-              styles.quickActionBtn,
-              {
-                backgroundColor: isDark ? colors.cardAlt : '#FFFFFF',
-                borderColor: isDark ? colors.border : colors.accent + '20',
-              },
-            ]}
-            activeOpacity={0.7}
-            onPress={() => onPress(action.message)}>
-            <Text
-              style={[
-                styles.quickActionText,
-                { color: colors.accent },
-              ]}
-              numberOfLines={1}>
-              {action.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
+    const userMsg: LocalChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: messageToSend,
+      timestamp: Date.now(),
+      image: resolvedImageUri || undefined,
+    };
 
-// --- Message Bubble ---
-function MessageBubble({
-  message,
-  colors,
-  isDark,
-  onQuickAction,
-  isLastAI,
-  onEdit,
-}: {
-  message: ChatMessage;
-  colors: any;
-  isDark: boolean;
-  onQuickAction: (msg: string) => void;
-  isLastAI: boolean;
-  onEdit: (text: string) => void;
-}) {
-  const isUser = message.role === 'user';
-
-  return (
-    <Reanimated.View 
-      entering={(isUser ? FadeInRight : FadeInLeft).springify()}
-      layout={Layout.springify()}
-      style={styles.messageGroup}>
-      <View
-        style={[
-          styles.bubbleRow,
-          isUser ? styles.bubbleRowUser : styles.bubbleRowAI,
-        ]}>
-        {/* AI Avatar */}
-        {!isUser && (
-          <View style={[styles.aiAvatar, { backgroundColor: colors.accentLight }]}>
-            <HugeiconsIcon icon={SparklesIcon} size={14} color={colors.accent} />
-          </View>
-        )}
-
-        <View style={{ maxWidth: SCREEN_WIDTH * 0.76 }}>
-          {/* Bubble */}
-          <View
-            style={[
-              styles.bubble,
-              isUser
-                ? [styles.userBubble, { backgroundColor: colors.accent }]
-                : [styles.aiBubble, { backgroundColor: colors.card, borderColor: colors.border }],
-            ]}>
-            {message.imageUri && (
-               <Image source={{ uri: message.imageUri }} style={styles.bubbleImage} />
-            )}
-            {isUser ? (
-              <Text style={[styles.messageText, { color: '#FFFFFF' }]}>
-                {message.content}
-              </Text>
-            ) : (
-              <FormattedText text={message.content} color={colors.text} />
-            )}
-          </View>
-
-          {/* Action Status Badge */}
-          {message.actionStatus && (
-            <View
-              style={[
-                styles.actionBadge,
-                {
-                  backgroundColor: isDark ? 'rgba(56,161,105,0.12)' : '#F0FFF4',
-                  borderColor: isDark ? 'rgba(56,161,105,0.25)' : '#C6F6D5',
-                },
-              ]}>
-              <Text style={[styles.actionBadgeText, { color: colors.accent }]}>
-                {message.actionStatus}
-              </Text>
-            </View>
-          )}
-
-          {/* Timestamp & User Actions */}
-          <View style={[styles.timestampRow, isUser && { justifyContent: 'flex-end' }]}>
-            <Text
-              style={[
-                styles.timestamp,
-                isUser ? styles.timestampUser : styles.timestampAI,
-                { color: colors.textMuted },
-              ]}>
-              {new Date(message.timestamp).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </Text>
-
-            {isUser && (
-              <View style={styles.userActions}>
-                <TouchableOpacity
-                  onPress={() => onEdit(message.content)}
-                  style={styles.actionIconBtn}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <HugeiconsIcon icon={PencilEdit02Icon} size={14} color={colors.textMuted} />
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </View>
-      </View>
-
-      {/* Quick Action Buttons (only on the last AI message) */}
-      {!isUser && isLastAI && message.quickActions && message.quickActions.length > 0 && (
-        <QuickActionButtons
-          actions={message.quickActions}
-          onPress={onQuickAction}
-          colors={colors}
-          isDark={isDark}
-        />
-      )}
-    </Reanimated.View>
-  );
-}
-
-// --- Main Screen ---
-export default function AICoachScreen() {
-  const router = useRouter();
-  const { colors, isDark } = useTheme();
-  const { messages, isLoading, sendMessage, clearChat } = useChat();
-  const [inputText, setInputText] = useState('');
-  const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
-  const [selectedImageBase64, setSelectedImageBase64] = useState<string | null>(null);
-  const [isScanning, setIsScanning] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
-
-  const handlePickImage = async () => {
-    Alert.alert(
-      "Attach Photo",
-      "Choose a source",
-      [
-        {
-          text: "Camera 📸",
-          onPress: async () => {
-            const { status } = await ImagePicker.requestCameraPermissionsAsync();
-            if (status !== 'granted') {
-              Alert.alert('Permission Denied', 'Camera access is required to take photos.');
-              return;
-            }
-            const result = await ImagePicker.launchCameraAsync({
-              allowsEditing: true,
-              aspect: [4, 3],
-              quality: 0.5,
-              base64: true,
-            });
-            if (!result.canceled && result.assets[0]) {
-              setSelectedImageUri(result.assets[0].uri);
-              setSelectedImageBase64(result.assets[0].base64 || null);
-            }
-          }
-        },
-        {
-          text: "Gallery 🖼️",
-          onPress: async () => {
-            const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ['images'],
-              allowsEditing: true,
-              aspect: [4, 3],
-              quality: 0.5,
-              base64: true,
-            });
-            if (!result.canceled && result.assets[0]) {
-              setSelectedImageUri(result.assets[0].uri);
-              setSelectedImageBase64(result.assets[0].base64 || null);
-            }
-          }
-        },
-        { text: "Cancel", style: "cancel" }
-      ]
-    );
-  };
-
-  const handleSend = useCallback(() => {
-    if ((!inputText.trim() && !selectedImageBase64) || isLoading) return;
+    setMessages(prev => [...prev, userMsg]);
+    setInputText('');
+    setIsLoading(true);
+    setIsTyping(true);
+    isStreamingRef.current = true;
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
-    if (selectedImageBase64) {
-      setIsScanning(true);
+
+    // Placeholder for AI 
+    const aiMsgId = `ai-${Date.now()}`;
+    const aiMsgPlaceholder: LocalChatMessage = {
+      id: aiMsgId,
+      role: 'ai',
+      content: '',
+      timestamp: Date.now(),
+    };
+    setMessages(prev => [...prev, aiMsgPlaceholder]);
+
+    let accumulatedText = '';
+    let imageBase64: string | undefined;
+    let cloudImageUrl: string | undefined;
+
+    if (resolvedImageUri) {
+      try {
+        // Read as base64 for the AI engine immediately (so it stays fast)
+        imageBase64 = await FileSystem.readAsStringAsync(resolvedImageUri, {
+          encoding: 'base64',
+        });
+
+        // BACKGROUND: Start uploading to Supabase for permanent persistence
+        // We'll wait for this before saving the Firestore record
+        cloudImageUrl = await uploadChatImage(user.id, resolvedImageUri);
+      } catch (e) {
+        console.error('[AICoach] Image processing/upload failed:', e);
+      }
     }
     
-    sendMessage(inputText, selectedImageUri || undefined, selectedImageBase64 || undefined);
-    setInputText('');
-    setSelectedImageUri(null);
-    setSelectedImageBase64(null);
-    Keyboard.dismiss();
-  }, [inputText, isLoading, sendMessage, selectedImageUri, selectedImageBase64]);
+    // Clear image ONLY after conversion is attempted
+    setSelectedImage(null);
 
-  useEffect(() => {
-    if (!isLoading && isScanning) {
-      setIsScanning(false);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    // 1. Save User Message to Firestore (Natively persistent)
+    try {
+      await addDoc(collection(db, 'users', user.id, 'chat_history'), {
+        role: 'user',
+        content: messageToSend,
+        timestamp: serverTimestamp(),
+        image: cloudImageUrl || resolvedImageUri || null
+      });
+    } catch (err) {
+      console.error('[AICoach] User msg save failed:', err);
     }
-  }, [isLoading, isScanning]);
 
-  const handleQuickAction = useCallback(
-    (message: string) => {
-      if (isLoading) return;
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      sendMessage(message);
-    },
-    [isLoading, sendMessage],
-  );
-
-  const handleClearChat = useCallback(() => {
-    Alert.alert(
-      'Clear Chat',
-      'This will delete your conversation history.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: () => {
-            clearChat();
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          },
+    // 2. Call AI and Stream
+    try {
+      const result = await processMessageStreaming(
+        messageToSend,
+        { ...userData, ...liveContext, todayLogs, historicalLogs, weeklySummary },
+        messages,
+        (chunk) => {
+          accumulatedText += chunk;
+          setMessages(prev => prev.map(m => 
+            m.id === aiMsgId ? { ...m, content: accumulatedText } : m
+          ));
         },
-      ],
-    );
-  }, [clearChat]);
+        imageBase64,
+        currentIntelligence
+      );
 
-  // Find latest AI message in inverted list (index 0 is bottom)
-  const lastAIIndex = [...messages].reverse().findIndex(m => m.role === 'ai');
+      // Finalize metadata locally
+      setMessages(prev => prev.map(m => 
+        m.id === aiMsgId ? { 
+          ...m, 
+          content: result.aiMessage.content || accumulatedText || "I've processed your request.",
+          actionStatus: result.aiMessage.actionStatus,
+          quickActions: result.aiMessage.quickActions 
+        } : m
+      ));
 
-  // --- Empty State ---
-  const renderEmptyState = () => (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <View style={styles.emptyContainer}>
-        <LinearGradient
-          colors={isDark ? ['#1A202C', '#2D3748'] : ['#F0FFF4', '#E6FFFA']}
-          style={StyleSheet.absoluteFill}
-        />
-        <View
-          style={[
-            styles.emptyIconCircle,
-            { backgroundColor: isDark ? colors.accentLight : '#E6FFFA' },
+      // 3. Save AI Response to Firestore
+      await addDoc(collection(db, 'users', user.id, 'chat_history'), {
+        role: 'ai',
+        content: result.aiMessage.content || accumulatedText,
+        timestamp: serverTimestamp(),
+        actionStatus: result.aiMessage.actionStatus,
+        quickActions: result.aiMessage.quickActions
+      });
+      
+      if (isVoiceEnabled) {
+        Speech.speak(result.aiMessage.content || accumulatedText, { pitch: 1.0, rate: 0.9 });
+      }
+
+    } catch (error) {
+      console.error('[AICoach] Chat error:', error);
+      setHasError(true);
+      setMessages(prev => prev.filter(m => m.id !== aiMsgId));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setIsLoading(false);
+      setIsTyping(false);
+      isStreamingRef.current = false;
+    }
+  };
+  
+  const handleCopyMessage = async (message: LocalChatMessage) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await Clipboard.setStringAsync(message.content);
+      setCopiedMessageId(message.id);
+      
+      // Reset confirmation icon after 2 seconds
+      setTimeout(() => {
+        setCopiedMessageId(null);
+      }, 2000);
+    } catch (err) {
+      console.error('[AICoach] Failed to copy:', err);
+    }
+  };
+
+  const handleScroll = (event: any) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const isAtBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 100;
+    isNearBottom.current = isAtBottom;
+  };
+
+  const handlePickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.5,
+      base64: true,
+    });
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+    }
+  };
+
+  const renderMessage = ({ item, index }: { item: LocalChatMessage, index: number }) => {
+    const isAi = item.role === 'ai';
+    const isLatest = index === messages.length - 1;
+    const ts = typeof item.timestamp === 'number' ? item.timestamp : (item.timestamp as any)?.toMillis?.() || Date.now();
+    const timeStr = format(ts, 'HH:mm');
+
+    return (
+      <Animated.View 
+        entering={isAi ? FadeInUp : FadeInDown}
+        style={[
+          styles.messageWrapper,
+          isAi ? styles.aiWrapper : styles.userWrapper
+        ]}
+      >
+        <View style={styles.bubbleRow}>
+          {isAi && (
+            <View style={[styles.aiAvatar, { backgroundColor: colors.accentLight }]}>
+              <HugeiconsIcon icon={ArtificialIntelligence01Icon} size={16} color={colors.accent} />
+            </View>
+          )}
+          
+          <View style={[
+            styles.messageBubble,
+            isAi ? 
+              [styles.aiBubble, { backgroundColor: isDark ? '#2D3748' : '#FFF', borderColor: isDark ? '#4A5568' : '#E2E8F0' }] : 
+              [styles.userBubble, { backgroundColor: colors.accent }]
           ]}>
-          <HugeiconsIcon icon={SparklesIcon} size={40} color={colors.accent} />
-        </View>
-        <Text style={[styles.emptyTitle, { color: colors.text }]}>
-          Your AI Coach
-        </Text>
-        <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
-          I analyze your data and give real advice — not just numbers. Try me out!
-        </Text>
-
-        <View style={styles.suggestedGrid}>
-          {SUGGESTED_PROMPTS.map((prompt, index) => (
-            <TouchableOpacity
-              key={index}
-              style={[
-                styles.suggestedChip,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                },
-              ]}
-              activeOpacity={0.7}
-              onPress={() => handleQuickAction(prompt.text)}>
-              <Text
-                style={[styles.suggestedChipText, { color: colors.textSecondary }]}
-                numberOfLines={1}>
-                {prompt.text}
+            {item.image && (
+              <Image source={{ uri: item.image }} style={styles.messageImage} />
+            )}
+            
+            {isAi ? (
+              <FormattedText text={item.content} color={colors.text} />
+            ) : (
+              <Text style={[styles.messageText, { color: '#FFF' }]}>
+                {item.content}
               </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-    </TouchableWithoutFeedback>
-  );
+            )}
+            
+            <View style={styles.bubbleFooter}>
+              <Text style={[styles.timestamp, isAi ? { color: colors.textMuted } : { color: 'rgba(255,255,255,0.7)' }]}>
+                {timeStr}
+              </Text>
+              {item.actionStatus && (
+                <View style={[styles.actionBadge, isAi ? {} : { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+                  <Text style={[styles.actionBadgeText, isAi ? {} : { color: '#FFF' }]}>{item.actionStatus}</Text>
+                </View>
+              )}
 
-  // --- Render ---
+              <TouchableOpacity 
+                style={[styles.copyBtn, isAi ? { marginLeft: 8 } : { marginLeft: 8 }]}
+                onPress={() => handleCopyMessage(item)}
+              >
+                <HugeiconsIcon 
+                  icon={copiedMessageId === item.id ? CheckmarkCircle02Icon : Note01Icon} 
+                  size={14} 
+                  color={isAi ? colors.textMuted : 'rgba(255,255,255,0.7)'} 
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        {isAi && isLatest && item.quickActions && item.quickActions.length > 0 && (
+          <View style={styles.quickActionsContainer}>
+            {item.quickActions.map((qa, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={[styles.quickActionBtn, { borderColor: colors.accent, backgroundColor: isDark ? 'transparent' : '#FFF' }]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  handleSendMessage(qa.message);
+                }}
+              >
+                <Text style={[styles.quickActionLabel, { color: colors.accent }]}>
+                  {qa.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </Animated.View>
+    );
+  };
+
   return (
-    <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: colors.background }]}
-      edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={[styles.headerBtn, { backgroundColor: colors.cardAlt }]}>
-          <HugeiconsIcon icon={ArrowLeft01Icon} size={22} color={colors.text} />
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={[styles.backButton, { backgroundColor: colors.card }]} 
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.back();
+          }}
+        >
+          <HugeiconsIcon icon={ArrowLeft01Icon} size={24} color={colors.text} />
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <View style={[styles.headerAvatarSmall, { backgroundColor: colors.accentLight }]}>
-            <HugeiconsIcon icon={SparklesIcon} size={14} color={colors.accent} />
-          </View>
-          <View>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>AI Coach</Text>
-            <Text style={[styles.headerStatus, { color: colors.accent }]}>Online</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>AI Coach</Text>
+          <View style={styles.modeToggle}>
+            <TouchableOpacity 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setIntelligenceMode('lightning');
+              }}
+              style={[
+                styles.modeBtn, 
+                intelligenceMode === 'lightning' && { backgroundColor: `${colors.accent}15` }
+              ]}
+            >
+              <HugeiconsIcon icon={FlashIcon} size={14} color={intelligenceMode === 'lightning' ? colors.accent : colors.textMuted} />
+              <Text style={[styles.modeText, { color: intelligenceMode === 'lightning' ? colors.accent : colors.textMuted }]}>Lightning</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setIntelligenceMode('pro');
+              }}
+              style={[
+                styles.modeBtn, 
+                intelligenceMode === 'pro' && { backgroundColor: `${colors.accent}15` }
+              ]}
+            >
+              <HugeiconsIcon icon={ArtificialIntelligence01Icon} size={14} color={intelligenceMode === 'pro' ? colors.accent : colors.textMuted} />
+              <Text style={[styles.modeText, { color: intelligenceMode === 'pro' ? colors.accent : colors.textMuted }]}>Pro</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        <TouchableOpacity
-          onPress={handleClearChat}
-          style={[styles.headerBtn, { backgroundColor: colors.cardAlt }]}
-          disabled={messages.length === 0}>
-          <HugeiconsIcon
-            icon={Delete02Icon}
-            size={20}
-            color={messages.length === 0 ? colors.textMuted : colors.danger}
+        <TouchableOpacity 
+          style={[styles.configBtn, { backgroundColor: isDark ? '#2D3748' : '#FFF' }]} 
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setIsVoiceEnabled(!isVoiceEnabled);
+          }}
+        >
+          <HugeiconsIcon 
+            icon={isVoiceEnabled ? VolumeHighIcon : VolumeMute01Icon} 
+            size={22} 
+            color={isVoiceEnabled ? colors.accent : colors.textMuted} 
           />
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={[styles.configBtn, { backgroundColor: colors.card, marginLeft: 8 }]} onPress={() => router.push('/bio-memory')}>
+          <HugeiconsIcon icon={Settings02Icon} size={24} color={colors.text} />
         </TouchableOpacity>
       </View>
 
-      <ScanOverlay visible={isScanning} />
-
-      {/* Chat Body */}
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
-        {messages.length === 0 && !isLoading ? (
-          renderEmptyState()
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={[...messages].reverse()}
-            keyExtractor={(_, i) => i.toString()}
-            inverted
-            renderItem={({ item, index }) => (
-              <MessageBubble
-                message={item}
-                colors={colors}
-                isDark={isDark}
-                onQuickAction={handleQuickAction}
-                isLastAI={index === lastAIIndex}
-                onEdit={(text) => {
-                  setInputText(text);
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                }}
-              />
-            )}
-            contentContainerStyle={styles.chatList}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            ListHeaderComponent={
-              isLoading ? <TypingIndicator colors={colors} /> : null
+      {/* Messages */}
+      <View style={{ flex: 1, opacity: isListReady || messages.length === 0 ? 1 : 0 }}>
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          renderItem={renderMessage}
+          contentContainerStyle={styles.chatContent}
+          onScroll={handleScroll}
+          onContentSizeChange={() => {
+            if (isFirstLoad.current) return; 
+            if (isNearBottom.current) {
+              flatListRef.current?.scrollToEnd({ animated: true });
             }
-          />
+          }}
+          // performance optimizations
+          initialNumToRender={50} // Render more initially to ensure the bottom is reachable
+          maxToRenderPerBatch={10}
+          windowSize={10}
+          removeClippedSubviews={Platform.OS === 'android'}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={
+            <View style={styles.disclaimerBox}>
+              <Text style={[styles.disclaimerText, { color: colors.textMuted }]}>
+                AI can provide inaccurate info. Consult a doctor before starting a new diet or exercise plan.
+              </Text>
+            </View>
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <View style={[styles.emptyIconBox, { backgroundColor: colors.accentLight }]}>
+                <HugeiconsIcon icon={SparklesIcon} size={40} color={colors.accent} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>Your Elite AI Partner</Text>
+              <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+                Ask me anything about your nutrition, workouts, or performance. I'm learning your habits in real-time.
+              </Text>
+              
+              {intelligenceMode === 'pro' && (
+                <Animated.View entering={FadeInUp} style={[styles.proBadge, { borderColor: colors.accent }]}>
+                  <HugeiconsIcon icon={ArtificialIntelligence01Icon} size={12} color={colors.accent} />
+                  <Text style={[styles.proBadgeText, { color: colors.accent }]}>Deep Analysis Mode Active</Text>
+                </Animated.View>
+              )}
+              
+              <View style={styles.sparkContainer}>
+                <TouchableOpacity style={[styles.sparkCard, { backgroundColor: isDark ? '#2D3748' : '#FFF' }]} onPress={() => handleSendMessage("📊 Analyze my last 7 days")}>
+                  <Text style={styles.sparkText}>📊 Trends Audit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.sparkCard, { backgroundColor: isDark ? '#2D3748' : '#FFF' }]} onPress={() => handleSendMessage("🥗 Suggest a high-protein dinner")}>
+                  <Text style={styles.sparkText}>🥗 Fast Macros</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.sparkCard, { backgroundColor: isDark ? '#2D3748' : '#FFF' }]} onPress={() => handleSendMessage("💧 Remind me about my water goal")}>
+                  <Text style={[styles.sparkText, { color: colors.text }]}>💧 Hydration</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          }
+        />
+      </View>
+
+      {/* Footer / Input */}
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        <View style={styles.typingWrapper}>
+          {isTyping && (
+            <View style={styles.typingOuter}>
+              <TypingIndicator color={colors.accent} />
+              <Text style={[styles.typingInfo, { color: colors.textMuted }]}>
+                {intelligenceMode === 'pro' ? 'Elite Pro Engine analyzing history...' : 'Lightning Engine calculating...'}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {hasError && !isLoading && (
+          <Animated.View entering={FadeInUp} style={[styles.errorBar, { backgroundColor: isDark ? '#422121' : '#FFF5F5' }]}>
+            <TouchableOpacity 
+              style={styles.retryBtn} 
+              onPress={() => {
+                setHasError(false);
+                handleSendMessage(lastFailedMessage.current);
+              }}
+            >
+              <Text style={[styles.retryText, { color: '#E53E3E' }]}>⚠️ Analysis failed. Tap to retry now.</Text>
+            </TouchableOpacity>
+          </Animated.View>
         )}
 
-        {/* Input Area */}
-        <View
-          style={[
-            styles.inputArea,
-            {
-              backgroundColor: colors.card,
-              borderTopColor: colors.border,
-            },
-          ]}>
-          
-          {selectedImageUri && (
+        <View style={[styles.footer, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
+          {selectedImage && (
             <View style={styles.imagePreviewContainer}>
-              <Image source={{ uri: selectedImageUri }} style={styles.imagePreview} />
-              <TouchableOpacity
-                style={styles.imagePreviewClose}
-                onPress={() => {
-                  setSelectedImageUri(null);
-                  setSelectedImageBase64(null);
-                }}>
-                <HugeiconsIcon icon={Cancel01Icon} size={16} color="#FFF" />
+              <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+              <TouchableOpacity style={styles.removeImage} onPress={() => setSelectedImage(null)}>
+                <Text style={{ color: '#FFF', fontWeight: 'bold' }}>✕</Text>
               </TouchableOpacity>
             </View>
           )}
+          
+          <View style={styles.inputWrapper}>
+            <TouchableOpacity style={styles.mediaBtn} onPress={handlePickImage}>
+              <HugeiconsIcon icon={Camera01Icon} size={24} color={colors.textMuted} />
+            </TouchableOpacity>
 
-          <View style={styles.inputAreaRow}>
-            <View
-              style={[
-                styles.inputWrapper,
-                {
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.border,
-                },
-              ]}>
-              <TouchableOpacity onPress={handlePickImage} style={styles.cameraBtn}>
-                <HugeiconsIcon icon={Camera01Icon} size={22} color={colors.textMuted} />
-              </TouchableOpacity>
-              <TextInput
-                style={[styles.textInput, { color: colors.text, flex: 1, paddingTop: 12 }]}
-                placeholder="Ask or log food..."
+            <TextInput
+              style={[styles.input, { color: colors.text }]}
+              placeholder="Message your coach..."
               placeholderTextColor={colors.textMuted}
               value={inputText}
               onChangeText={setInputText}
               multiline
-              maxLength={500}
-              editable={!isLoading}
-              onSubmitEditing={handleSend}
-              blurOnSubmit
             />
-          </View>
 
-          <TouchableOpacity
-            style={[
-              styles.sendButton,
-              {
-                backgroundColor:
-                  (inputText.trim() || selectedImageUri) && !isLoading
-                    ? colors.accent
-                    : isDark
-                    ? colors.cardAlt
-                    : '#EDF2F7',
-              },
-            ]}
-            onPress={handleSend}
-            disabled={(!inputText.trim() && !selectedImageUri) || isLoading}
-            activeOpacity={0.7}>
-            {isLoading ? (
-              <ActivityIndicator size="small" color={colors.textMuted} />
-            ) : (
-              <HugeiconsIcon
-                icon={SentIcon}
-                size={20}
-                color={(inputText.trim() || selectedImageUri) ? '#FFFFFF' : colors.textMuted}
-              />
-            )}
-          </TouchableOpacity>
+            <TouchableOpacity 
+              style={[
+                styles.sendBtn, 
+                { backgroundColor: inputText.trim() || selectedImage ? colors.accent : colors.border }
+              ]}
+              onPress={() => handleSendMessage(inputText, selectedImage || undefined)}
+              disabled={isLoading || (!inputText.trim() && !selectedImage)}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <HugeiconsIcon icon={ArrowRight01Icon} size={20} color="#FFF" />
+              )}
+            </TouchableOpacity>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -668,321 +849,90 @@ export default function AICoachScreen() {
   );
 }
 
-// --- Styles ---
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  bubbleImage: {
-    width: 220,
-    aspectRatio: 4 / 3,
-    borderRadius: 12,
-    marginBottom: 8,
-  },
-  imagePreviewContainer: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-    alignSelf: 'flex-start',
-    position: 'relative',
-  },
-  imagePreview: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-  },
-  imagePreviewClose: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    backgroundColor: '#000',
-    borderRadius: 12,
-    padding: 2,
-    borderWidth: 2,
-    borderColor: '#FFF',
-  },
-  inputAreaRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    width: '100%',
-  },
-  cameraBtn: {
-    padding: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  // Header
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingVertical: 12,
-    borderBottomWidth: 1,
   },
-  headerBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
+  backButton: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  headerCenter: { alignItems: 'center' },
+  headerTitle: { fontSize: 16, fontWeight: '800' },
+  modeToggle: { flexDirection: 'row', marginTop: 4, backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: 20, padding: 2 },
+  modeBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 18 },
+  modeText: { fontSize: 10, fontWeight: '700' },
+  configBtn: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  chatContent: { padding: 20, paddingBottom: Platform.OS === 'ios' ? 40 : 100 },
+  messageWrapper: { marginBottom: 20 },
+  aiWrapper: { alignSelf: 'stretch', width: '100%', maxWidth: '100%' },
+  userWrapper: { alignSelf: 'flex-end', maxWidth: '85%' },
+  messageBubble: { padding: 14, borderRadius: 18, flexShrink: 1 },
+  aiBubble: { borderBottomLeftRadius: 4, borderWidth: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1, flex: 1 },
+  userBubble: { borderBottomRightRadius: 4 },
+  bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, width: '100%' },
+  aiAvatar: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
+  bubbleFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, gap: 12, flexWrap: 'wrap' },
+  timestamp: { fontSize: 9, fontWeight: '600' },
+  messageText: { fontSize: 14, lineHeight: 20, fontWeight: '500' },
+  messageImage: { width: 240, height: 180, borderRadius: 12, marginBottom: 8 },
+  disclaimerBox: { padding: 20, alignItems: 'center', opacity: 0.6 },
+  disclaimerText: { fontSize: 10, textAlign: 'center', fontStyle: 'italic', lineHeight: 14 },
+  actionBadge: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: 'rgba(0,144,80,0.1)', 
+    paddingHorizontal: 8, 
+    paddingVertical: 3, 
+    borderRadius: 6 
   },
-  headerCenter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  actionBadgeText: { fontSize: 10, color: '#009050', fontWeight: '700' },
+  copyBtn: {
+    padding: 2,
   },
-  headerAvatarSmall: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  headerStatus: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-
-  // Chat List
-  chatList: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 32,
-  },
-
-  // Message Group (bubble + quick actions)
-  messageGroup: {
-    marginBottom: 16,
-  },
-
-  // Bubble Row
-  bubbleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-  },
-  bubbleRowUser: {
-    justifyContent: 'flex-end',
-  },
-  bubbleRowAI: {
-    justifyContent: 'flex-start',
-  },
-  aiAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-    marginBottom: 18,
-  },
-  bubble: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 20,
-  },
-  userBubble: {
-    borderBottomRightRadius: 6,
-  },
-  aiBubble: {
-    borderBottomLeftRadius: 6,
-    borderWidth: 1,
-  },
-
-  // Smart Text Formatting
-  messageText: {
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  messageHeading: {
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  bulletRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingLeft: 4,
-    marginVertical: 2,
-  },
-  bulletDot: {
-    fontSize: 15,
-    lineHeight: 22,
-    marginRight: 8,
-    fontWeight: '600',
-  },
-  bulletText: {
-    fontSize: 15,
-    lineHeight: 22,
-    flex: 1,
-  },
-
-  // Action Badge
-  actionBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginTop: 6,
-  },
-  actionBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  // Timestamp
-  timestamp: {
-    fontSize: 11,
-    marginTop: 4,
-  },
-  timestampUser: {
-    textAlign: 'right',
-  },
-  timestampAI: {
-    textAlign: 'left',
-  },
-  timestampRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
-  },
-  userActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginLeft: 12,
-  },
-  actionIconBtn: {
-    opacity: 0.7,
-  },
-
-  // Quick Action Buttons
-  quickActionsContainer: {
-    marginTop: 12,
-    marginBottom: 8,
-    marginLeft: 36,
-  },
-  quickActionsScroll: {
-    gap: 10,
-    paddingRight: 20,
-    paddingBottom: 4,
-  },
-  quickActionBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  quickActionText: {
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-
-  // Typing Indicator
-  typingRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    marginBottom: 16,
-  },
-  typingBubble: {
-    flexDirection: 'row',
-    gap: 5,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    borderRadius: 20,
-    borderBottomLeftRadius: 6,
-    borderWidth: 1,
-  },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-  },
-
-  // Input Area
-  inputArea: {
-    flexDirection: 'column',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  quickActionsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, marginLeft: 36 },
+  quickActionBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
+  quickActionLabel: { fontSize: 12, fontWeight: '700' },
+  emptyContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 80, paddingHorizontal: 40 },
+  emptyIconBox: { width: 80, height: 80, borderRadius: 24, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+  emptyTitle: { fontSize: 20, fontWeight: '900', marginBottom: 8 },
+  emptySubtitle: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  footer: { padding: 12, paddingBottom: Platform.OS === 'ios' ? 12 : 12, borderTopWidth: 1 },
+  imagePreviewContainer: { position: 'relative', marginBottom: 12, marginLeft: 12 },
+  imagePreview: { width: 60, height: 60, borderRadius: 12 },
+  removeImage: { position: 'absolute', top: -5, right: -5, backgroundColor: '#E53E3E', width: 18, height: 18, borderRadius: 9, justifyContent: 'center', alignItems: 'center' },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  mediaBtn: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  input: { flex: 1, maxHeight: 100, fontSize: 15, fontWeight: '500', paddingVertical: 10 },
+  sendBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
+  typingWrapper: { height: 28, paddingLeft: 20, justifyContent: 'center' },
+  errorBar: {
+    paddingVertical: 8,
     borderTopWidth: 1,
-    gap: 10,
-  },
-  inputWrapper: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 24,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: Platform.OS === 'ios' ? 10 : 4,
-    maxHeight: 100,
-  },
-  textInput: {
-    fontSize: 15,
-    lineHeight: 20,
-    maxHeight: 80,
-  },
-  sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    borderTopColor: 'rgba(229, 62, 62, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  // Empty State
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    paddingBottom: 40,
+  retryBtn: { width: '100%', alignItems: 'center', paddingVertical: 4 },
+  retryText: { fontSize: 13, fontWeight: '700', letterSpacing: -0.3 },
+  typingOuter: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  typingInfo: { fontSize: 11, fontStyle: 'italic' },
+  typingContainer: { flexDirection: 'row', gap: 4, width: 30 },
+  typingDot: { width: 5, height: 5, borderRadius: 2.5 },
+  proBadge: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 6, 
+    marginTop: 12, 
+    borderWidth: 1, 
+    paddingHorizontal: 10, 
+    paddingVertical: 4, 
+    borderRadius: 20 
   },
-  emptyIconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  emptyTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 15,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 28,
-  },
-  suggestedGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 8,
-  },
-  suggestedChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  suggestedChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
+  proBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  sparkContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 30, justifyContent: 'center' },
+  sparkCard: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 },
+  sparkText: { fontSize: 12, fontWeight: '700' },
 });

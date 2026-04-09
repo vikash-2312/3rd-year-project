@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import {
   isHealthConnectAvailable,
   requestHealthPermissions,
@@ -17,7 +19,7 @@ export interface HealthState {
   avgHeartRate: number;
 }
 
-export const useHealthData = () => {
+export const useHealthData = (userId?: string) => {
   const [data, setData] = useState<HealthState>({
     steps: 0,
     calories: 0,
@@ -66,6 +68,14 @@ export const useHealthData = () => {
         sleepHours: sleep,
         avgHeartRate: heartRate,
       });
+
+      // Persist sync status for the onboarding checklist
+      if (userId) {
+        const userRef = doc(db, 'users', userId);
+        updateDoc(userRef, { healthConnectSynced: true }).catch(err => 
+          console.error('[useHealthData] Failed to persist sync status:', err)
+        );
+      }
     } catch (err: any) {
       console.error('[useHealthData] Init/Fetch failed:', err);
       setError(err.message || 'An unexpected error occurred');

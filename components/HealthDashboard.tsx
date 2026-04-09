@@ -11,6 +11,7 @@ import {
   Pulse01Icon
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
+import { useUser } from '@clerk/expo';
 import { useHealthData } from '../hooks/useHealthData';
 import { useTheme } from '../lib/ThemeContext';
 import Animated, { 
@@ -24,7 +25,8 @@ import Animated, {
 import { format } from 'date-fns';
 
 export const HealthDashboard: React.FC = () => {
-  const { data, loading, error, isAvailable, refresh } = useHealthData();
+  const { user } = useUser();
+  const { data, loading, error, isAvailable, refresh } = useHealthData(user?.id);
   const { colors, isDark } = useTheme();
   const [lastSynced, setLastSynced] = React.useState<Date>(new Date());
 
