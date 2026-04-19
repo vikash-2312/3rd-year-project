@@ -5,18 +5,24 @@
  * Builds context-aware prompts, sends requests with retry logic,
  * and safely parses structured JSON responses.
  */
-
+import { format } from 'date-fns';
 import { UserMemory } from './memoryService';
 
 export interface ChatMessage {
   id: string; // Unique ID for stable indexing
-  role: 'user' | 'ai';
+  role: 'user' | 'ai' | 'system';
   content: string;
   timestamp: number;
-  actionStatus?: string; // e.g. "✅ Calories updated to 3000"
-  quickActions?: QuickAction[]; // Contextual follow-up buttons
-  imageUri?: string; // UI render path
-  imageBase64?: string; // API payload data (not saved in history)
+  actionStatus?: string | null; // e.g. "✅ Calories updated to 3000"
+  quickActions?: QuickAction[] | null; // Contextual follow-up buttons
+  actionMetadata?: {
+    id?: string;
+    type?: string;
+    status: string;
+    data?: any;
+  }[] | null;
+  imageUri?: string | null; // UI render path
+  imageBase64?: string | null; // API payload data (not saved in history)
 }
 
 export interface QuickAction {
@@ -25,7 +31,7 @@ export interface QuickAction {
 }
 
 export interface AIAction {
-  type: 'update_calories' | 'update_goal' | 'log_food' | 'log_water' | 'log_exercise' | 'generate_plan' | 'store_memory' | 'undo_log';
+  type: 'update_calories' | 'update_goal' | 'log_food' | 'log_water' | 'log_exercise' | 'generate_plan' | 'store_memory' | 'undo_log' | 'search_food';
   data: Record<string, any>;
 }
 
@@ -104,16 +110,36 @@ function buildSystemPrompt(context: UserContext, intelligenceMode: 'lightning' |
     .filter(Boolean)
     .join('\n');
 
-  const chatHistoryBlock = context.recentMessages
+  const chatHistoryBlock = (context.recentMessages || [])
     .slice(-15)
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n');
+
+  const now = new Date();
+  const timeContext = `═══ TEMPORAL CONTEXT ═══
+- Current Time: ${format(now, 'EEEE, MMM do, yyyy HH:mm')}
+- Reference: All "Today" logs are relative to this timestamp.
+
+═══ TEMPORAL LOGIC (CRITICAL) ═══
+- The "4 AM Rule": If the current time is between 00:00 and 04:00:
+    - If the user says "log my dinner", "today's snacks", or refers to eating without a date, they almost certainly mean the PREVIOUS calendar day. 
+    - In this case, you MUST set "target_date" in your log_food action to yesterday's date (YYYY-MM-DD).
+    - If they say "breakfast" or explicitly "today" (meaning the new day), use the current date.
+- Always use the provided Current Time as your baseline for "today".`;
 
   const totalDaysSpan = context.weeklySummary?.length || 7;
   const activeDays = context.weeklySummary?.filter(d => d.hasLogs).length || 0;
   const historicalLogsCount = context.historicalLogs?.length || 0;
 
   return `You are the lead health coach at Ai-cal-track, a premium fitness platform. You work alongside a high-precision medical macro engine. Your tone is supportive, expert, and highly actionable.
+
+${timeContext}
+
+═══ USER BIO & MEMORY ═══
+${memoryBlock || 'No bio memory available yet.'}
+
+═══ CONVERSATION HISTORY ═══
+${chatHistoryBlock || 'New conversation started.'}
 
 ═══ LIVE MACRO SCORECARD ═══
 - Profile: ${JSON.stringify(context.onboarding || {})}
@@ -172,14 +198,20 @@ Every entry in the "actions" array MUST follow this exact nested structure:
 - log_water: { "type": "log_water", "data": { "waterLiters": number } }
 - log_exercise: { "type": "log_exercise", "data": { "name": string, "duration": number, "calories": number, "intensity": "Low | Medium | High" } }
 - update_calories: { "type": "update_calories", "data": { "adjustment": number, "reason": string } }
-- undo_log: { "type": "undo_log", "data": { "type": "food | water | exercise" (optional) } }
+- undo_log: { "type": "undo_log", "data": { "type": "food | water | exercise | profile" (optional), "name": string (optional) } }
+- search_food: { "type": "search_food", "data": { "query": string } }
 
 🔴 STOP & SPLIT CHECKLIST (Mandatory):
 1. Multiple foods? (Roti + Sabji). -> YES? Use 2 SEPARATE log_food actions.
 2. Supplement? (Creatine, Protein). -> YES? Use a SEPARATE log_food action.
 3. Goal change? (e.g. Add 200 kcal). -> YES? Use an update_calories action.
 4. Preferences? User mentions they are vegan, allergic to peanuts, or you observe a personality trait (hates being nagged, prefers data). -> YES? Output a "memory_update" object.
-5. User says "undo", "delete that", or "made a mistake"? -> YES? Use the undo_log action.
+5. User says "undo", "delete that", or "made a mistake"? -> YES? Use the undo_log action. If the user specifies WHICH item (e.g. "undo the coffee"), you MUST include the "name": "coffee" in the action data.
+6. Unsure about calories? (e.g. "How much is in an Oreo?"). -> YES? Use the 'search_food' action to get real data before guessing.
+
+🔴 CONTEXTUAL INTELLIGENCE:
+- Quick Actions: Generate 3 labels/messages that are UNIQUE and SPECIFIC to the current moment. Avoid generic buttons. If the user is tired, suggest recovery. If they are over macros, suggest a light dinner.
+- Memory Consolidation: Periodically (every ~10 messages) update the 'unstructured_bio' in your memory_update with a concise summary of the user's progress and recent struggles. 
 
 🔴 THE LEARNING PROTOCOL (SILENT MEMORY):
 - If the user says "I don't have time to cook", update "complexity_pref" to "High-speed/No-prep".
@@ -192,11 +224,11 @@ Every entry in the "actions" array MUST follow this exact nested structure:
 🚫 NO AUTO-LOGGING: Never trigger a "log_food" action for items you are ONLY suggesting. Only log if the user explicitly confirms they ate it or asked you to log it right now.
 
 🔴 VISION PROTOCOL:
-1. If an image is provided, your PRIMRY goal is to identify all food items and estimate their weight/portions.
+1. If an image is provided, your PRIMARY goal is to identify all food items and estimate their weight/portions.
 2. Assume standard restaurant/home portions unless otherwise specified.
 3. Give a clear table-like breakdown in your text response (e.g. "Chicken Breast (150g): 250 kcal").
-4. If the user says nothing but sends an image, analyze it and ASK if they want to log it.
-5. If the user says "log this", "just ate this", or implies consumption, you MUST generate the 'log_food' actions immediately.
+4. IMPORTANT (PORTION SAFETY): If the user simply sends a photo without a command (like "just ate this" or "log"), you MUST analyze the food and ASK for confirmation of your portion estimates before triggering any 'log_food' actions.
+5. If the user explicitly says "log this", "just ate this", or implies immediate consumption, you may generate the 'log_food' actions, but you MUST call out the estimated weights in your text response so they can correct you if needed.
 6. For multi-item plates, generate SEPARATE 'log_food' actions for each major component.
 
 ═══ OUTPUT FORMAT (STRICT JSON) ═══
@@ -444,6 +476,9 @@ export async function sendToGeminiStreaming(
     // Gemini streaming returns a JSON array. We need to parse individual objects or chunks.
     // This is a simplified parser for the typical Gemini response format.
     try {
+      // RESET fullText because we scan the ENTIRE buffer from scratch
+      fullText = '';
+      
       // 1. First, look for completed candidates in the array
       const matches = Array.from(buffer.matchAll(/\{"candidates":[\s\S]*?\}(?=\s*,\s*\{|\s*\])/g));
       for (const match of matches) {
@@ -456,7 +491,7 @@ export async function sendToGeminiStreaming(
 
       // 2. High-performance "live" extraction for the "response" property
       // This allows character-by-character updates even BEFORE the JSON candidate is finished
-      const responseMatch = buffer.match(/"response"\s*:\s*"((?:[^"\\]|\\.)*)/);
+      const responseMatch = fullText.match(/"response"\s*:\s*"((?:[^"\\]|\\.)*)/);
       if (responseMatch) {
         let partial = responseMatch[1];
         // Clean up partial JSON escape characters for live display
@@ -473,7 +508,22 @@ export async function sendToGeminiStreaming(
     }
   }
 
-  return parseAIResponse(fullText);
+  // Final guaranteed parse of the entire accumulated buffer
+  let finalText = '';
+  try {
+    const allMatches = Array.from(buffer.matchAll(/\{"candidates":[\s\S]*?\}(?=\s*,\s*\{|\s*\])/g));
+    for (const match of allMatches) {
+      try {
+        const obj = JSON.parse(match[0]);
+        const text = obj?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) finalText += text;
+      } catch (e) { /* skip */ }
+    }
+  } catch(e) {
+    console.error('[aiService] Final parser error:', e);
+  }
+
+  return parseAIResponse(finalText || fullText || '');
 }
 
 /**
@@ -533,41 +583,3 @@ export function parseAIResponse(raw: string): AIResponse {
   }
 }
 
-/**
- * Lightweight, fast API call to fetch a 1-sentence daily insight.
- * Used passively on the Home Dashboard.
- */
-export async function getDailyInsight(
-  consumedCalories: number,
-  targetCalories: number,
-  protein: number
-): Promise<string> {
-  if (USE_MOCK_AI) {
-    return "You're crushing it! Keep your protein high for dinner. 💪";
-  }
-
-  if (!GEMINI_API_KEY) return '';
-
-  const prompt = `You are a strict but encouraging fitness AI. 
-The user has consumed ${consumedCalories} kcal out of ${targetCalories} kcal today, and ${protein}g protein.
-Write exactly ONE short, punchy sentence of personalized coaching or strategy.
-Max 15 words. Include exactly 1 emoji. Do not use hashtags or markdown.`;
-
-  try {
-    const response = await fetch(GEMINI_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-      }),
-    });
-
-    const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-    return text.replace(/["\n]/g, '').trim();
-  } catch (error) {
-    console.error('[AIService] Daily Insight fetch failed:', error);
-    return "Keep pushing! Log your meals to stay on track. 💪";
-  }
-}

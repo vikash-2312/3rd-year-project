@@ -2,7 +2,7 @@ import { useUser } from '@clerk/expo';
 import { CheckmarkCircle02Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { format } from 'date-fns';
+import { format, parse, differenceInYears } from 'date-fns';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { addDoc, collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
@@ -126,6 +126,16 @@ export default function GeneratingProfile() {
         const parsedWeight = parseFloat(weight);
         const rawEmail = user.primaryEmailAddress?.emailAddress || user.emailAddresses?.[0]?.emailAddress || '';
         
+        // Calculate Age for Profile Persistence
+        let calculatedAge = 25;
+        try {
+          const birthDateObj = parse(birthdate, 'yyyy-MM-dd', new Date());
+          calculatedAge = differenceInYears(new Date(), birthDateObj);
+          if (isNaN(calculatedAge)) calculatedAge = 25;
+        } catch (e) {
+          console.error('[Generating] Age calculation failed:', e);
+        }
+        
         await setDoc(userRef, {
           email: rawEmail.toLowerCase(),
           profile: {
@@ -133,10 +143,14 @@ export default function GeneratingProfile() {
             goal,
             activityLevel: activity,
             birthdate,
+            age: calculatedAge,
             diet,
             measurements: {
               weightKg: parsedWeight,
               heightCm: parseInt(heightCm),
+              // Save imperial too for perfect profile sync
+              heightFt: Math.floor((Math.round(parseInt(heightCm) / 2.54)) / 12),
+              heightIn: (Math.round(parseInt(heightCm) / 2.54)) % 12,
             },
             macros: finalData,
             updatedAt: new Date(),

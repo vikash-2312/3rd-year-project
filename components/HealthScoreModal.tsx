@@ -10,7 +10,8 @@ import {
   ArrowRight01Icon,
   Cancel01Icon,
   CheckmarkCircle02Icon,
-  FavouriteIcon
+  FavouriteIcon,
+  Moon02Icon
 } from '@hugeicons/core-free-icons';
 import { useTheme } from '../lib/ThemeContext';
 import Animated, { FadeInDown, SlideInUp, SlideOutDown } from 'react-native-reanimated';
@@ -59,6 +60,7 @@ interface HealthScoreModalProps {
     exercise: number;
     water: number;
     calories: number;
+    sleep: number;
   };
   onProfilePress: () => void;
 }
@@ -71,6 +73,7 @@ export function HealthScoreModal({ isVisible, onClose, totalScore, breakdown, on
 
   const getInsight = () => {
     if (totalScore >= 90) return "You're in the elite zone! Your consistency is phenomenal. 💎";
+    if (breakdown.sleep < 5) return "You're running on empty. Prioritize 7-8 hours of sleep tonight for a massive score boost. 😴";
     if (breakdown.water < 15) return "Boost your hydration to see your focus and score improve instantly. 💧";
     if (breakdown.exercise < 10) return "A quick 15-minute walk would push your movement score significantly. 🏃";
     if (breakdown.protein < 15) return "Your protein is slightly low today—try a high-protein snack. 🍗";
@@ -162,6 +165,14 @@ export function HealthScoreModal({ isVisible, onClose, totalScore, breakdown, on
                 icon={FireIcon} 
                 color="#D69E2E" 
                 description="Adherence to your daily energy goal."
+              />
+              <ScoreComponent 
+                label="Recovery & Sleep" 
+                score={breakdown.sleep} 
+                maxScore={10} 
+                icon={Moon02Icon} 
+                color="#A78BFA" 
+                description="Quality rest for hormonal balance and recovery."
               />
             </View>
 

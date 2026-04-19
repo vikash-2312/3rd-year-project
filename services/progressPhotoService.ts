@@ -11,7 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { supabase } from '../lib/supabase';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 
 // --- Types ---
@@ -37,10 +37,13 @@ export async function uploadProgressPhoto(
   date: string,
   weight?: number
 ): Promise<ProgressPhoto> {
-  // 1. Use the new Expo 54+ File API to get the ArrayBuffer directly
-  // This is faster and avoids the deprecation warning
-  const file = new FileSystem.File(imageUri);
-  const arrayBuffer = await file.arrayBuffer();
+  // 1. Read the file as Base64 to ensure no corruption during transfer
+  const base64 = await FileSystem.readAsStringAsync(imageUri, {
+    encoding: 'base64' as any,
+  });
+  
+  // 2. Convert Base64 to ArrayBuffer (the format Supabase Storage expects)
+  const arrayBuffer = decode(base64);
 
   // 3. Upload to Supabase Storage
   const timestamp = Date.now();

@@ -57,19 +57,21 @@ const findClerkMethod = (obj: any, names: string[]): Function | null => {
 export default function SignUp() {
   useWarmUpBrowser();
   const signUpResult = useSignUp() as any;
-  const { isLoaded: isLoadedAuth, isSignedIn } = useAuth();
   const { setActive } = useClerk();
+  
+  // Handle Signal API or legacy structure: favor the object that has the methods (create, etc.)
+  const isLoaded = signUpResult?.isLoaded ?? !!signUpResult?.signUp;
+  const signUp = (signUpResult?.create || signUpResult?.id)
+    ? signUpResult
+    : (signUpResult?.signUp?.create ? signUpResult.signUp : (signUpResult?.signUp || null));
+
+  const { isLoaded: isLoadedAuth, isSignedIn } = useAuth();
+  
   const { startOAuthFlow } = useOAuth({
     strategy: 'oauth_google',
     redirectUrl: AuthSession.makeRedirectUri()
   });
   const router = useRouter();
-
-  // Handle Signal API: favor the object that has the methods (create, etc.)
-  const isLoaded = signUpResult?.isLoaded ?? !!signUpResult?.signUp;
-  const signUp = (signUpResult?.create || signUpResult?.id)
-    ? signUpResult
-    : (signUpResult?.signUp?.create ? signUpResult.signUp : (signUpResult?.signUp || null));
 
   const { colors } = useTheme();
   const [name, setName] = React.useState('');
@@ -80,7 +82,7 @@ export default function SignUp() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState('');
 
-  console.log('[SignUp] render - isLoaded:', isLoaded, 'hasSignUp:', !!signUp, 'hasSetActive:', !!setActive);
+  console.log('[SignUp] render - isLoaded:', isLoaded, 'hasSignUp:', !!signUp);
 
   const formatClerkError = (err: any) => {
     try {
@@ -112,37 +114,71 @@ export default function SignUp() {
     const trimmedEmail = emailAddress.trim().toLowerCase();
     setIsLoading(true);
     try {
+      // 1. Check if we already have an unverified session for this exact email
+      if (
+        ((signUp.status as any) === 'unverified' || signUp.status === 'missing_requirements') &&
+        signUp.emailAddress === trimmedEmail
+      ) {
+        console.log('[SignUp] Resuming existing unverified session for:', trimmedEmail);
+        try {
+          if (typeof signUp.prepareEmailAddressVerification === 'function') {
+            await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+          } else if (signUp.verifications && typeof signUp.verifications.sendEmailCode === 'function') {
+             await signUp.verifications.sendEmailCode();
+          } else {
+             throw new Error("Unable to locate verification dispatcher on Clerk object.");
+          }
+          setShowVerification(true);
+        } catch (prepErr: any) {
+          console.error('[SignUp] Preparation failed on resume:', prepErr);
+          const errMsg = formatClerkError(prepErr);
+          setError('Failed to send verification code. ' + errMsg);
+          Alert.alert('Verification Error', errMsg);
+        }
+        return;
+      }
+
+      // 2. Normal creation flow
       let createResult = await signUp.create({
         emailAddress: trimmedEmail,
         password: password,
         firstName: name.split(' ')[0] || '',
         lastName: name.split(' ').slice(1).join(' ') || '',
-      });
+      }) as any;
 
-      // Safe unnesting: only unnest if createResult is an object and has .result
+      // Safe unnesting
       if (createResult && typeof createResult === 'object' && 'result' in createResult && createResult.result) {
         if (createResult.error && createResult.error !== 'null') throw createResult.error;
+        createResult = createResult.result;
       }
 
-      const status = (createResult as any)?.status || signUp.status;
+      const status = createResult?.status || signUp.status;
       console.log('[SignUp] Create status:', status);
 
-      if (status === 'missing_requirements') {
-        console.log('[SignUp] Finding preparation method...');
-        const prepareMethod = findClerkMethod(signUp, ['prepareEmailAddressVerification', 'prepare', 'sendEmailCode']);
+      if (status === 'unverified' || status === 'missing_requirements') {
+        try {
+          console.log('[SignUp] Preparing verification with result...');
+          
+          // Try all possible method names on the create result first
+          const prep = createResult.prepareEmailAddressVerification 
+            || createResult.prepare 
+            || signUp.prepareEmailAddressVerification 
+            || signUp.prepare;
 
-        if (prepareMethod) {
-          try {
-            console.log('[SignUp] Preparing verification...');
-            await prepareMethod({ strategy: 'email_code' });
-            setShowVerification(true);
-          } catch (prepErr) {
-            console.error('[SignUp] Preparation failed:', prepErr);
-            setError('Failed to send verification code. ' + formatClerkError(prepErr));
+          if (typeof prep === 'function') {
+            await prep.call(createResult || signUp, { strategy: 'email_code' });
+          } else if (signUp.verifications?.sendEmailCode) {
+             await signUp.verifications.sendEmailCode();
+          } else {
+             throw new Error("Unable to locate verification dispatcher (prepareEmailAddressVerification) on Clerk resource.");
           }
-        } else {
-          console.warn('[SignUp] No preparation method found, showing screen anyway');
+          
           setShowVerification(true);
+        } catch (prepErr: any) {
+          console.error('[SignUp] Preparation failed:', prepErr);
+          const errMsg = formatClerkError(prepErr);
+          setError('Failed to send verification code. ' + errMsg);
+          Alert.alert('Verification Error', errMsg);
         }
       } else if (status === 'complete') {
         const sessionId = (createResult as any)?.createdSessionId || signUp.createdSessionId;
@@ -158,9 +194,13 @@ export default function SignUp() {
       const errorCode = firstError?.code || err?.code;
 
       if (errorCode === 'form_identifier_exists' || errorCode === 'form_identifier_taken' || errorCode === 'user_already_exists') {
-        setError('An account with this email already exists.');
+        const msg = 'An account with this email already exists. Please Sign In instead.';
+        setError(msg);
+        Alert.alert('Already Registered', msg);
       } else {
-        setError(formatClerkError(err));
+        const msg = formatClerkError(err);
+        setError(msg);
+        Alert.alert('Sign Up Failed', msg);
       }
     } finally {
       setIsLoading(false);
@@ -183,22 +223,13 @@ export default function SignUp() {
       const trimmedEmail = emailAddress.trim().toLowerCase();
       console.log('[SignUp] Verifying code:', code);
 
-      const rootSu = signUpResult as any;
       let result;
-
-      const verifyMethod = findClerkMethod(signUp, ['attemptEmailAddressVerification', 'verifyEmailCode', 'verify', 'attempt'])
-        || findClerkMethod(rootSu, ['attemptEmailAddressVerification', 'verifyEmailCode', 'verify', 'attempt']);
-
-      if (verifyMethod) {
-        console.log('[SignUp] Found verification method, calling...');
-        try {
-          result = await verifyMethod({ code });
-        } catch (e) {
-          console.log('[SignUp] Verification failed, retrying with raw code...');
-          result = await verifyMethod(code);
-        }
+      if (typeof signUp.attemptEmailAddressVerification === 'function') {
+         result = await signUp.attemptEmailAddressVerification({ code });
+      } else if (signUp.verifications && typeof signUp.verifications.verifyEmailCode === 'function') {
+         result = await signUp.verifications.verifyEmailCode({ code });
       } else {
-        throw new Error('No method found to verify email code');
+         throw new Error("Unable to locate verification validation method on Clerk object.");
       }
 
       // Safe unnesting: only unnest if result is an object and has .result
@@ -250,10 +281,12 @@ export default function SignUp() {
   const onResendPress = async () => {
     if (!signUp) return;
     try {
-      if (signUp.prepareEmailAddressVerification) {
+      if (typeof signUp.prepareEmailAddressVerification === 'function') {
         await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
-      } else if (signUp.sendEmailCode) {
-        await signUp.sendEmailCode();
+      } else if (signUp.verifications && typeof signUp.verifications.sendEmailCode === 'function') {
+        await signUp.verifications.sendEmailCode();
+      } else {
+        throw new Error("Unable to resend: Verification dispatcher not found.");
       }
       Alert.alert('Success', 'Verification code resent to your email.');
     } catch (err: any) {
@@ -286,7 +319,7 @@ export default function SignUp() {
         await setOAuthActive({ session: createdSessionId });
 
         // Wait for session to stabilize
-        const userId = signUp.createdUserId || (signUpResult as any)?.createdUserId;
+        const userId = signUp?.createdUserId;
         if (userId) {
           const { route } = await checkAndMigrateProfile(
             userId,
@@ -314,7 +347,7 @@ export default function SignUp() {
     } finally {
       setIsLoading(false);
     }
-  }, [startOAuthFlow, router, isLoading, signUp, signUpResult]);
+  }, [startOAuthFlow, router, isLoading, signUp]);
 
   // ── Verification Screen ────────────────────────────────────────────
   if (isSignedIn) {

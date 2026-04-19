@@ -101,6 +101,7 @@ export async function searchFoods(query: string, maxResults: number = 5): Promis
     method: 'foods.search',
     search_expression: query,
     format: 'json',
+    region: 'IN',
     max_results: String(maxResults),
     oauth_consumer_key: CONSUMER_KEY,
     oauth_signature_method: 'HMAC-SHA1',
@@ -162,6 +163,129 @@ export async function searchFoods(query: string, maxResults: number = 5): Promis
     });
   } catch (error) {
     console.error('Search request failed:', error);
+    throw error;
+  }
+}
+
+export type Serving = {
+  serving_id: string;
+  serving_description: string;
+  metric_serving_amount: string;
+  metric_serving_unit: string;
+  number_of_units: string;
+  measurement_description: string;
+  calories: string;
+  carbs: string;
+  protein: string;
+  fat: string;
+  fiber?: string;
+  sugar?: string;
+  added_sugar?: string;
+  calcium?: string;
+  sodium?: string;
+};
+
+export async function getFoodDetails(foodId: string): Promise<Serving[]> {
+  if (!CONSUMER_KEY || !CONSUMER_SECRET) {
+    throw new Error('Missing FatSecret API credentials in .env');
+  }
+
+  const oauthParams: Record<string, string> = {
+    method: 'food.get.v2',
+    food_id: foodId,
+    format: 'json',
+    oauth_consumer_key: CONSUMER_KEY,
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_nonce: Math.random().toString(36).substring(2, 12),
+    oauth_version: '1.0',
+  };
+
+  const signature = generateSignature('POST', API_URL, oauthParams);
+  oauthParams.oauth_signature = signature;
+
+  const body = Object.keys(oauthParams)
+    .map((key) => `${rfc3986Encode(key)}=${rfc3986Encode(oauthParams[key])}`)
+    .join('&');
+
+  try {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body,
+    });
+
+    if (!response.ok) {
+      throw new Error(`FatSecret API failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.error) {
+      throw new Error(`FatSecret Error: ${data.error.message}`);
+    }
+
+    const servingsData = data?.food?.servings?.serving;
+    if (!servingsData) return [];
+
+    const servingsArray = Array.isArray(servingsData) ? servingsData : [servingsData];
+    const parsedServings = servingsArray.map((s: any) => ({
+      serving_id: s.serving_id,
+      serving_description: s.serving_description,
+      metric_serving_amount: s.metric_serving_amount,
+      metric_serving_unit: s.metric_serving_unit,
+      number_of_units: s.number_of_units,
+      measurement_description: s.measurement_description,
+      calories: s.calories || '0',
+      carbs: s.carbohydrate || '0',
+      protein: s.protein || '0',
+      fat: s.fat || '0',
+      fiber: s.fiber || '0',
+      sugar: s.sugar || '0',
+      added_sugar: s.added_sugars || '0',
+      calcium: s.calcium || '0',
+      sodium: s.sodium || '0',
+    }));
+
+    // Inject '1 g' or '1 ml' or '1 oz' synthetic option if missing, using the first available metric measurement
+    const availableMetricUnits = ['g', 'ml', 'oz'];
+    
+    for (const mUnit of availableMetricUnits) {
+       const hasUnit = parsedServings.some(s => 
+          s.measurement_description?.toLowerCase() === mUnit || 
+          s.serving_description?.toLowerCase() === `1 ${mUnit}`
+       );
+
+       if (!hasUnit) {
+          const metricSource = parsedServings.find(s => s.metric_serving_unit?.toLowerCase() === mUnit && parseFloat(s.metric_serving_amount) > 0);
+          if (metricSource) {
+            const amount = parseFloat(metricSource.metric_serving_amount);
+            const ratio = 1 / amount;
+            parsedServings.push({
+              serving_id: metricSource.serving_id + `_1${mUnit}_synthetic`,
+              serving_description: `1 ${mUnit}`,
+              metric_serving_amount: '1',
+              metric_serving_unit: mUnit,
+              number_of_units: '1',
+              measurement_description: mUnit,
+              calories: (parseFloat(metricSource.calories) * ratio).toFixed(2),
+              carbs: (parseFloat(metricSource.carbs || '0') * ratio).toFixed(3),
+              protein: (parseFloat(metricSource.protein || '0') * ratio).toFixed(3),
+              fat: (parseFloat(metricSource.fat || '0') * ratio).toFixed(3),
+              fiber: (parseFloat(metricSource.fiber || '0') * ratio).toFixed(3),
+              sugar: (parseFloat(metricSource.sugar || '0') * ratio).toFixed(3),
+              added_sugar: (parseFloat(metricSource.added_sugar || '0') * ratio).toFixed(3),
+              calcium: (parseFloat(metricSource.calcium || '0') * ratio).toFixed(3),
+              sodium: (parseFloat(metricSource.sodium || '0') * ratio).toFixed(3),
+            });
+          }
+       }
+    }
+
+    return parsedServings;
+  } catch (error) {
+    console.error('getFoodDetails failed:', error);
     throw error;
   }
 }

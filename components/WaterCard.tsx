@@ -8,14 +8,21 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { useTheme } from '../lib/ThemeContext';
 import { HugeiconsIcon } from '@hugeicons/react-native';
-import { Add01Icon } from '@hugeicons/core-free-icons';
+import { Add01Icon, ArrowLeft01Icon } from '@hugeicons/core-free-icons';
 import { TouchableOpacity } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 type WaterCardProps = {
   targetLiters: number;
   consumedLiters: number;
   onQuickLog?: (liters: number) => void;
+  onUndo?: () => void;
+  isToday?: boolean;
+  isFuture?: boolean;
+  dateLabel?: string;
 };
+
+import * as Haptics from 'expo-haptics';
 
 const GLASS_VOLUME_L = 0.25;
 
@@ -44,17 +51,39 @@ const AnimatedGlass = ({ index, source, opacity, totalConsumedGlasses }: { index
   );
 };
 
-export const WaterCard = React.memo(({ targetLiters, consumedLiters, onQuickLog }: WaterCardProps) => {
-  const { colors } = useTheme();
+export const WaterCard = React.memo(({ 
+  targetLiters, 
+  consumedLiters, 
+  onQuickLog, 
+  onUndo,
+  isToday = true,
+  isFuture = false,
+  dateLabel
+}: WaterCardProps) => {
+  const { colors, isDark } = useTheme();
   
   const totalTargetGlasses = Math.ceil(targetLiters / GLASS_VOLUME_L);
   const totalConsumedGlasses = consumedLiters / GLASS_VOLUME_L;
   const remainingCalculated = Math.max(0, totalTargetGlasses - totalConsumedGlasses);
   const percentage = Math.min(100, Math.round((consumedLiters / targetLiters) * 100));
 
+
+  const GLASSES_PER_ROW = 8;
+
   const renderGlasses = () => {
     const glasses = [];
-    for (let i = 0; i < totalTargetGlasses; i++) {
+    
+    // Determine how many glasses to show: start with 8 (one row), 
+    // and add 8 more only if the current row is completely filled.
+    let displayCount = GLASSES_PER_ROW;
+    while (totalConsumedGlasses > displayCount && displayCount < totalTargetGlasses) {
+      displayCount += GLASSES_PER_ROW;
+    }
+    
+    // Cap displayCount at the total target, but always show at least one row if the target is small
+    const finalShowCount = Math.min(displayCount, totalTargetGlasses);
+
+    for (let i = 0; i < finalShowCount; i++) {
       let src;
       let isOpacity = false;
       const glassValue = i + 1;
@@ -82,7 +111,15 @@ export const WaterCard = React.memo(({ targetLiters, consumedLiters, onQuickLog 
   };
 
   return (
-    <View style={[styles.cardContainer, { backgroundColor: colors.card }]}>
+    <View style={[styles.cardContainer, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: isDark ? 1 : 0 }]}>
+      {isDark && (
+        <LinearGradient
+          colors={['rgba(255,255,255,0.02)', 'transparent']}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 1, y: 0 }}
+          end={{ x: 0, y: 1 }}
+        />
+      )}
       <View style={styles.headerRow}>
         <View style={styles.headerLeft}>
           <Text style={[styles.titleText, { color: colors.text }]}>Water</Text>
@@ -90,8 +127,17 @@ export const WaterCard = React.memo(({ targetLiters, consumedLiters, onQuickLog 
             {Math.round(consumedLiters * 1000)}ml / {Math.round(targetLiters * 1000)}ml
           </Text>
         </View>
-        <View style={[styles.percentageBadge, { backgroundColor: colors.blue + '10' }]}>
-           <Text style={[styles.percentageText, { color: colors.blue }]}>{percentage}%</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {(isFuture || !isToday) && dateLabel && (
+            <View style={[styles.dateBadge, { backgroundColor: isFuture ? colors.textTertiary + '15' : colors.warning + '15' }]}>
+               <Text style={[styles.dateBadgeText, { color: isFuture ? colors.textTertiary : colors.warning }]}>
+                 {isFuture ? 'FUTURE' : dateLabel}
+               </Text>
+            </View>
+          )}
+          <View style={[styles.percentageBadge, { backgroundColor: colors.blue + '10' }]}>
+             <Text style={[styles.percentageText, { color: colors.blue }]}>{percentage}%</Text>
+          </View>
         </View>
       </View>
 
@@ -110,23 +156,29 @@ export const WaterCard = React.memo(({ targetLiters, consumedLiters, onQuickLog 
           </Text>
         </View>
 
-        <View style={styles.quickLogActions}>
+        <View style={[styles.quickLogActions, isFuture && { opacity: 0.5 }]}>
           <TouchableOpacity 
             style={[styles.quickButton, { backgroundColor: colors.blue + '15' }]} 
-            onPress={() => onQuickLog?.(0.25)}
+            onPress={() => {
+              if (isFuture) return;
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onQuickLog?.(GLASS_VOLUME_L);
+            }}
+            disabled={isFuture}
             activeOpacity={0.7}
           >
-             <HugeiconsIcon icon={Add01Icon} size={14} color={colors.blue} />
-             <Text style={[styles.quickButtonText, { color: colors.blue }]}>250ml</Text>
+            <HugeiconsIcon icon={Add01Icon} size={14} color={colors.blue} />
+            <Text style={[styles.quickButtonText, { color: colors.blue }]}>250ml</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={[styles.quickButton, { backgroundColor: colors.blue + '15' }]} 
-            onPress={() => onQuickLog?.(0.5)}
+            style={[styles.undoButton, { backgroundColor: colors.cardAlt, borderColor: colors.border, borderWidth: 1 }]} 
+            onPress={() => !isFuture && onUndo?.()}
+            disabled={isFuture}
             activeOpacity={0.7}
           >
-             <HugeiconsIcon icon={Add01Icon} size={14} color={colors.blue} />
-             <Text style={[styles.quickButtonText, { color: colors.blue }]}>500ml</Text>
+             <HugeiconsIcon icon={ArrowLeft01Icon} size={14} color={colors.textTertiary} />
+             <Text style={[styles.undoButtonText, { color: colors.textTertiary }]}>Undo</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -216,18 +268,52 @@ const styles = StyleSheet.create({
   },
   quickLogActions: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    gap: 12,
+  },
+  quickButtonWrapper: {
+    alignItems: 'center',
   },
   quickButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    gap: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    gap: 6,
   },
   quickButtonText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  hintText: {
+    fontSize: 9,
+    fontWeight: '600',
+    marginTop: 4,
+    textTransform: 'uppercase',
+  },
+  undoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    gap: 4,
+  },
+  undoButtonText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
+  },
+  dateBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(214, 158, 46, 0.2)',
+  },
+  dateBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
   }
 });

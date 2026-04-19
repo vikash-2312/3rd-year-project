@@ -75,9 +75,9 @@ const ACTIVITY_LEVELS = [
 ];
 
 const GOALS = [
-  { id: 'lose_weight', label: 'Lose Weight', desc: 'Focus on fat loss', icon: FireIcon, color: '#E53E3E', offset: -500 },
+  { id: 'lose', label: 'Lose Weight', desc: 'Focus on fat loss', icon: FireIcon, color: '#E53E3E', offset: -500 },
   { id: 'maintain', label: 'Maintain', desc: 'Stay healthy & balanced', icon: DashboardCircleIcon, color: '#3182CE', offset: 0 },
-  { id: 'gain_muscle', label: 'Gain Muscle', desc: 'Build strength & mass', icon: Dumbbell01Icon, color: '#009050', offset: 300 },
+  { id: 'gain', label: 'Gain Weight', desc: 'Build strength & mass', icon: Dumbbell01Icon, color: '#009050', offset: 300 },
 ];
 
 export default function PersonalDetails() {
@@ -144,8 +144,16 @@ export default function PersonalDetails() {
           }
 
           setWeight(data.measurements?.weightKg?.toString() || '');
-          setHeightFt(data.measurements?.heightFt?.toString() || '');
-          setHeightIn(data.measurements?.heightIn?.toString() || '');
+          
+          // --- Height Migration: Handle CM (Onboarding) or FT/IN (Profile) ---
+          if (data.measurements?.heightFt || data.measurements?.heightIn) {
+            setHeightFt(data.measurements?.heightFt?.toString() || '');
+            setHeightIn(data.measurements?.heightIn?.toString() || '');
+          } else if (data.measurements?.heightCm) {
+            const totalInches = Math.round(data.measurements.heightCm / 2.54);
+            setHeightFt(Math.floor(totalInches / 12).toString());
+            setHeightIn((totalInches % 12).toString());
+          }
           setGender(data.gender || 'male');
           setGoal(data.goal || 'maintain');
           setActivityLevel(data.activityLevel || 'moderate');
@@ -547,7 +555,11 @@ export default function PersonalDetails() {
 
             <View style={styles.row}>
               <View style={{ flex: 1, marginRight: 12 }}>{renderInput('Hydration', water, setWater, '2.5', 'decimal-pad', 'L')}</View>
-              <View style={{ flex: 1 }}>{renderInput('Daily Steps', steps, setSteps, '10000', 'number-pad', 'steps')}</View>
+            </View>
+
+            <View style={styles.row}>
+              <View style={{ flex: 1, marginRight: 12 }}>{renderInput('Daily Steps', steps, setSteps, '10000', 'number-pad', 'steps')}</View>
+              <View style={{ flex: 1 }}>{renderInput('Daily Sleep', sleep, setSleep, '8', 'decimal-pad', 'hrs')}</View>
             </View>
           </Animated.View>
 

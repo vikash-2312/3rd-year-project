@@ -1,0 +1,30 @@
+diff --git a/node_modules/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/compose/ui/FetchDevelopmentServersButton.kt b/node_modules/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/compose/ui/FetchDevelopmentServersButton.kt
+index 25d85a4..b08805d 100644
+--- a/node_modules/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/compose/ui/FetchDevelopmentServersButton.kt
++++ b/node_modules/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/compose/ui/FetchDevelopmentServersButton.kt
+@@ -21,10 +21,10 @@ import expo.modules.devmenu.compose.newtheme.NewAppTheme
+ import expo.modules.devmenu.compose.primitives.NewText
+ import expo.modules.devmenu.compose.primitives.RoundedSurface
+ import kotlinx.coroutines.delay
+-import kotlin.time.Clock
++import kotlinx.datetime.Clock
+ import kotlin.time.Duration.Companion.seconds
+ import kotlin.time.ExperimentalTime
+-import kotlin.time.Instant
++import kotlinx.datetime.Instant
+ 
+ @Composable
+ @OptIn(ExperimentalTime::class)
+diff --git a/node_modules/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/compose/utils/DateFormat.kt b/node_modules/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/compose/utils/DateFormat.kt
+index abcdef0..1234567 100644
+--- a/node_modules/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/compose/utils/DateFormat.kt
++++ b/node_modules/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/compose/utils/DateFormat.kt
+@@ -13,7 +13,7 @@ object DateFormat {
+   val updateDateFormat = LocalDateTime.Format {
+     monthName(MonthNames.ENGLISH_ABBREVIATED)
+     chars(" ")
+-    day()
++    dayOfMonth()
+     chars(", ")
+     year()
+     chars(", ")

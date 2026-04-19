@@ -10,7 +10,9 @@ import {
   deleteDoc, 
   addDoc, 
   serverTimestamp, 
-  getDocs 
+  getDocs,
+  updateDoc,
+  startAfter
 } from "firebase/firestore";
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, View, Text, Alert, TouchableOpacity } from "react-native";
@@ -22,8 +24,7 @@ import { HomeHeader } from "../../components/HomeHeader";
 import { RecentActivity } from "../../components/RecentActivity";
 import { WaterCard } from "../../components/WaterCard";
 import { WeeklyCalendar } from "../../components/WeeklyCalendar";
-import { HealthScoreCard } from "../../components/HealthScoreCard";
-import { DailyInsightCard } from "../../components/DailyInsightCard";
+import { HealthMetricsCard } from "../../components/HealthMetricsCard";
 import { HealthScoreModal } from "../../components/HealthScoreModal";
 import { AIProactiveAlert } from "../../components/AIProactiveAlert";
 import { useRouter } from "expo-router";
@@ -36,6 +37,7 @@ import { Skeleton } from "../../components/Skeleton";
 import { Confetti, ConfettiRef } from "../../components/Confetti";
 import { SmartMealSuggestions } from "../../components/SmartMealSuggestions";
 import { OnboardingChecklist, OnboardingTask } from "../../components/OnboardingChecklist";
+import { ManualHealthEntryModal } from "../../components/ManualHealthEntryModal";
 
 import { db } from "../../lib/firebase";
 import { useTheme } from "../../lib/ThemeContext";
@@ -45,24 +47,12 @@ import { getMemory } from "../../services/memoryService";
 import { getFrequentMeals, quickLogMeal, FrequentMeal, getStarterMeals } from "../../services/mealService";
 import { useHealthData } from "../../hooks/useHealthData";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { calculateUnifiedHealthScore } from "../../services/healthScore";
 
 const HomeSkeleton = () => {
   const { colors } = useTheme();
   return (
     <View style={styles.skeletonContainer}>
-      {/* Header Skeleton */}
-      <View style={styles.skeletonHeader}>
-        <Skeleton width="40%" height={24} />
-        <Skeleton width={40} height={40} borderRadius={20} />
-      </View>
-      
-      {/* Calendar Skeleton */}
-      <View style={styles.skeletonCalendar}>
-        {[1, 2, 3, 4, 5, 6, 7].map(i => (
-          <Skeleton key={i} width={40} height={60} borderRadius={12} />
-        ))}
-      </View>
-
       {/* Insight Card Skeleton */}
       <Skeleton width="100%" height={100} borderRadius={24} style={{ marginBottom: 16 }} />
 
@@ -70,7 +60,10 @@ const HomeSkeleton = () => {
       <Skeleton width="100%" height={320} borderRadius={24} style={{ marginBottom: 16 }} />
       
       {/* Water Card Skeleton */}
-      <Skeleton width="100%" height={80} borderRadius={24} style={{ marginBottom: 16 }} />
+      <Skeleton width="100%" height={120} borderRadius={24} style={{ marginBottom: 16 }} />
+
+      {/* Health Card Skeleton */}
+      <Skeleton width="100%" height={160} borderRadius={24} style={{ marginBottom: 16 }} />
 
       {/* Activity List Skeleton */}
       <View style={{ gap: 12 }}>
@@ -106,13 +99,13 @@ export default function Home() {
     transform: [{ scale: pulse.value }],
   }));
   
-  const { data: healthData } = useHealthData(user?.id);
+  const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
+  const health = useHealthData(user?.id, selectedDate);
+  const healthData = health.data;
 
   const [userData, setUserData] = useState<any>(null);
-  const [logs, setLogs] = useState<any[]>([]);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [isLogsLoading, setIsLogsLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
   const [latestWeight, setLatestWeight] = useState<number | null>(null);
   const [isScoreModalVisible, setIsScoreModalVisible] = useState(false);
   const [activeInsights, setActiveInsights] = useState<AIInsight[]>([]);
@@ -124,12 +117,27 @@ export default function Home() {
   const [isChecklistDismissed, setIsChecklistDismissed] = useState(false);
   const [hasLoggedAnyMeal, setHasLoggedAnyMeal] = useState(false);
   const [hasAnyPhoto, setHasAnyPhoto] = useState(false);
+  const [isManualEntryVisible, setIsManualEntryVisible] = useState(false);
+  
+  // Pagination & Aggregation State
+  const [logs, setLogs] = useState<any[]>([]);
+  const [fullDayLogs, setFullDayLogs] = useState<any[]>([]); // New: For accurate daily totals
+  const [hasMoreLogs, setHasMoreLogs] = useState(false);
+  const [isMoreLogsLoading, setIsMoreLogsLoading] = useState(false);
+  const lastDocRef = useRef<any>(null);
+  
   const dismissedInsightIds = useRef<Set<string>>(new Set());
   
   const confettiRef = useRef<ConfettiRef>(null);
   const lastCalorieCelebration = useRef<string | null>(null);
   const lastWaterCelebration = useRef<string | null>(null);
   const isAnalyzingRef = useRef(false);
+  const stepsRef = useRef(healthData.steps);
+  
+  // Sync ref with state
+  useEffect(() => {
+    stepsRef.current = healthData.steps;
+  }, [healthData.steps]);
 
   const runProactiveAnalysis = useCallback(async (profile: any) => {
     if (!user || isAnalyzingRef.current) return;
@@ -140,7 +148,7 @@ export default function Home() {
         user.id, 
         profile, 
         7, 
-        healthData.steps, 
+        stepsRef.current, 
         profile?.macros?.dailySteps
       );
       if (context) {
@@ -234,9 +242,7 @@ export default function Home() {
     const userRef = doc(db, 'users', user.id);
     const unsubscribeUser = onSnapshot(userRef, (docSnap) => {
       if (docSnap.exists()) {
-        const data = docSnap.data();
-        setUserData(data);
-        runProactiveAnalysis(data);
+        setUserData(docSnap.data());
       }
       setIsProfileLoading(false);
     }, (error) => {
@@ -273,8 +279,7 @@ export default function Home() {
     const logsQuery = query(
       collection(db, 'logs'),
       where('userId', '==', user.id),
-      where('date', '==', dateStr),
-      limit(50)
+      where('date', '==', dateStr)
     );
 
     const unsubscribeLogs = onSnapshot(logsQuery, (snapshot) => {
@@ -307,16 +312,52 @@ export default function Home() {
       });
 
       setLogs(dailyLogs);
+      setHasMoreLogs(snapshot.docs.length === 15);
+      lastDocRef.current = snapshot.docs[snapshot.docs.length - 1] || null;
       setIsLogsLoading(false);
     }, (error) => {
       console.error("Firestore Logs Snapshot Error:", error);
       setIsLogsLoading(false);
     });
 
+    // 2. Full Day Aggregation Listener (Fix for Daily Totals Bug)
+    const fullDayQuery = query(
+      collection(db, 'logs'),
+      where('userId', '==', user.id),
+      where('date', '==', dateStr)
+      // No limit here because we need all logs for accurate macros/health score
+    );
+
+    const unsubscribeFullDay = onSnapshot(fullDayQuery, (snapshot) => {
+      const allLogs = snapshot.docs.map(doc => doc.data());
+      setFullDayLogs(allLogs);
+    });
+
     return () => {
       unsubscribeLogs();
+      unsubscribeFullDay();
     };
   }, [user, selectedDate]);
+
+  // TRIGGER ANALYSIS REACTIVELY
+  // This ensures that when steps or logs update, the AI re-evaluates insights
+  useEffect(() => {
+    if (!userData || isProfileLoading || isLogsLoading || health.loading) return;
+    
+    // Small delay to ensure all state updates have settled
+    const timer = setTimeout(() => {
+      runProactiveAnalysis(userData);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [
+    userData, 
+    health.data.steps,
+    isProfileLoading,
+    isLogsLoading,      // Re-run when logs are finished loading (calories updated)
+    health.loading,     // Wait for health data to be fully fetched
+    runProactiveAnalysis
+  ]);
 
   useEffect(() => {
     if (!userData || logs.length === 0) return;
@@ -325,7 +366,7 @@ export default function Home() {
     if (!isDateToday(selectedDate)) return;
 
     const targetCalories = userData?.profile?.macros?.dailyCalories || 2000;
-    const consumedCalories = logs
+    const consumedCalories = fullDayLogs
       .filter(l => (l.type === 'food' || l.type === 'ai_log'))
       .reduce((acc, curr) => acc + (Number(curr.calories) || 0), 0);
     
@@ -338,7 +379,7 @@ export default function Home() {
     }
 
     const targetWater = userData?.profile?.macros?.waterIntakeLiters || 2.0;
-    const consumedWater = logs
+    const consumedWater = fullDayLogs
       .filter(l => l.type === 'water')
       .reduce((acc, curr) => acc + (Number(curr.waterLiters) || 0), 0);
 
@@ -349,18 +390,18 @@ export default function Home() {
         confettiRef.current?.trigger();
       }, 500);
     }
-  }, [logs, userData, selectedDate]);
+  }, [fullDayLogs, userData, selectedDate]);
 
   const consumedMacros = useMemo(() => {
-    return logs.reduce((acc, log) => ({
-      calories: acc.calories + (log.type === 'food' ? (log.calories || 0) : 0),
-      protein: acc.protein + (log.protein || 0),
-      carbs: acc.carbs + (log.carbs || 0),
-      fats: acc.fats + (log.fat || 0),
-      water: acc.water + (log.waterLiters || 0),
-      exerciseMinutes: acc.exerciseMinutes + (log.type === 'exercise' ? (log.duration || 0) : 0),
+    return fullDayLogs.reduce((acc, log) => ({
+      calories: acc.calories + (log.type === 'food' || log.type === 'ai_log' ? (Number(log.calories) || 0) : 0),
+      protein: acc.protein + (Number(log.protein) || 0),
+      carbs: acc.carbs + (Number(log.carbs) || 0),
+      fats: acc.fats + (Number(log.fat) || Number(log.fats) || 0),
+      water: acc.water + (Number(log.waterLiters) || 0),
+      exerciseMinutes: acc.exerciseMinutes + (log.type === 'exercise' ? (Number(log.duration) || 0) : 0),
     }), { calories: 0, protein: 0, carbs: 0, fats: 0, water: 0, exerciseMinutes: 0 });
-  }, [logs]);
+  }, [fullDayLogs]);
 
   const targets = useMemo(() => userData?.profile?.macros || {}, [userData]);
   const dailyCalories = useMemo(() => targets.dailyCalories || 2000, [targets]);
@@ -371,25 +412,100 @@ export default function Home() {
   const consumedWaterLiters = consumedMacros.water;
 
   const currentHealthScoreBreakdown = useMemo(() => {
-    const proteinScore = Math.min((consumedMacros.protein / (targets.proteinGrams || 150)) * 20, 20);
-    const macroScore = Math.min(((consumedMacros.carbs + consumedMacros.fats) / 200) * 20, 20);
-    const calorieScore = Math.min((consumedMacros.calories / dailyCalories) * 20, 20);
-    const exerciseScore = Math.min(consumedMacros.exerciseMinutes / 30, 1) * 20;
-    const waterScore = Math.min(consumedMacros.water / 2.5, 1) * 20;
-    
-    return {
-      protein: Math.max(0, proteinScore),
-      macros: Math.max(0, macroScore),
-      calories: Math.max(0, calorieScore),
-      exercise: Math.max(0, exerciseScore),
-      water: Math.max(0, waterScore),
-      total: Math.round(proteinScore + macroScore + exerciseScore + waterScore + calorieScore)
-    };
-  }, [consumedMacros, dailyCalories, targets]);
+    return calculateUnifiedHealthScore({
+      consumed: {
+        calories: consumedMacros.calories,
+        protein: consumedMacros.protein,
+        carbs: consumedMacros.carbs,
+        fat: consumedMacros.fats,
+        water: consumedMacros.water,
+        exerciseMinutes: consumedMacros.exerciseMinutes
+      },
+      targets: {
+        dailyCalories: targets.dailyCalories || 2000,
+        proteinGrams: targets.proteinGrams || 150,
+        carbsGrams: targets.carbsGrams || 200,
+        fatsGrams: targets.fatsGrams || 65,
+        dailySteps: targets.dailySteps || 10000,
+        waterIntakeLiters: targets.waterIntakeLiters || 2.5,
+        exerciseMinutes: targets.exerciseMinutes || 30,
+        sleepHours: targets.sleepHours || 8
+      },
+      todaySteps: health.data.steps,
+      todaySleep: health.data.sleepHours || 0
+    });
+  }, [consumedMacros, targets, health.data.steps, health.data.sleepHours]);
 
   const currentHealthScore = currentHealthScoreBreakdown.total;
 
   const scoreColor = currentHealthScore >= 70 ? '#009050' : currentHealthScore >= 40 ? '#D69E2E' : '#E53E3E';
+
+  const loadMoreLogs = useCallback(async () => {
+    if (!user || isMoreLogsLoading || !hasMoreLogs || !lastDocRef.current) return;
+
+    setIsMoreLogsLoading(true);
+    try {
+      const dateStr = format(selectedDate, 'yyyy-MM-dd');
+      
+      // FOR PRODUCTION: This query requires a composite index on (userId, date, timestamp).
+      // If the index isn't created yet, this will error. 
+      // I'm adding startAfter to support millions of users as requested.
+      const q = query(
+        collection(db, 'logs'),
+        where('userId', '==', user.id),
+        where('date', '==', dateStr),
+        // orderBy('timestamp', 'desc'), // Removing orderBy for now to ensure it works without custom index immediately
+        startAfter(lastDocRef.current),
+        limit(15)
+      );
+      
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) {
+        setHasMoreLogs(false);
+        return;
+      }
+
+      const nextLogs = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          type: data.type || 'food',
+          timestamp: data.timestamp,
+          date: data.date,
+          name: data.name,
+          calories: data.calories,
+          protein: data.protein,
+          carbs: data.carbs,
+          fat: data.fat,
+          waterLiters: data.waterLiters,
+          intensity: data.intensity,
+          duration: data.duration,
+          description: data.description,
+          serving: data.serving,
+          brand: data.brand,
+          time: data.timestamp?.toDate()
+            ? data.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : 'Just now'
+        };
+      });
+
+      setLogs(prev => {
+        // Filter out any logs that might have been added by the real-time listener already
+        const existingIds = new Set(prev.map(l => l.id));
+        const filteredNext = nextLogs.filter(l => !existingIds.has(l.id));
+        return [...prev, ...filteredNext];
+      });
+      setHasMoreLogs(snapshot.docs.length === 15);
+      lastDocRef.current = snapshot.docs[snapshot.docs.length - 1];
+    } catch (e: any) {
+      console.error('[Home] LoadMore Error:', e);
+      if (e.code === 'failed-precondition') {
+        console.warn('⚠️ FIRESTORE INDEX MISSING: This query requires a composite index. Check the link in the Firebase console to create it.');
+      }
+    } finally {
+      setIsMoreLogsLoading(false);
+    }
+  }, [user, isMoreLogsLoading, hasMoreLogs, selectedDate]);
 
   const handleDeleteLog = useCallback(async (id: string, name: string) => {
     Alert.alert(
@@ -414,27 +530,75 @@ export default function Home() {
     );
   }, []);
 
+  const isFuture = selectedDate > startOfDay(new Date());
+  
   const handleQuickLogWater = useCallback(async (liters: number) => {
-    if (!user) return;
+    if (!user || isFuture) return;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await addDoc(collection(db, 'logs'), {
         userId: user.id,
         type: 'water',
         waterLiters: liters,
-        date: format(new Date(), 'yyyy-MM-dd'),
+        date: format(selectedDate, 'yyyy-MM-dd'),
         name: 'Water',
         timestamp: serverTimestamp(),
       });
     } catch (err) {
       console.error("Error quick logging water:", err);
     }
-  }, [user]);
+    // selectedDate is in deps to avoid stale closure writing to wrong day
+  }, [user, selectedDate, isFuture]);
+ 
+  const handleUndoWater = useCallback(async () => {
+    if (!user) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const dateStr = format(selectedDate, 'yyyy-MM-dd');
+      const q = query(
+        collection(db, 'logs'),
+        where('userId', '==', user.id),
+        where('type', '==', 'water'),
+        where('date', '==', dateStr)
+      );
+      const snapshot = await getDocs(q);
+      
+      if (!snapshot.empty) {
+        // Find the most recent one
+        const sortedDocs = snapshot.docs.sort((a, b) => {
+          const timeA = a.data().timestamp?.toMillis?.() || 0;
+          const timeB = b.data().timestamp?.toMillis?.() || 0;
+          return timeB - timeA;
+        });
+        
+        const latestDoc = sortedDocs[0];
+        await deleteDoc(doc(db, 'logs', latestDoc.id));
+      } else {
+        Alert.alert("No logs", "No water logs found for today to undo.");
+      }
+    } catch (err) {
+      console.error("Error undoing water:", err);
+    }
+  }, [user, selectedDate]);
 
   const isToday = isDateToday(selectedDate);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
+      <View style={{ backgroundColor: colors.background, zIndex: 10 }}>
+        <HomeHeader 
+          userData={userData}
+          healthScore={currentHealthScore} 
+          scoreColor={scoreColor}
+          pulseStyle={pulseStyle}
+          onScorePress={() => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            setIsScoreModalVisible(true);
+          }}
+        />
+        <WeeklyCalendar selectedDate={selectedDate} onDateSelect={setSelectedDate} />
+      </View>
+
       <ScrollView 
         style={styles.container} 
         contentContainerStyle={styles.content}
@@ -463,16 +627,6 @@ export default function Home() {
             ))}
           </View>
         )}
-        <HomeHeader 
-          userData={userData}
-          healthScore={currentHealthScore} 
-          scoreColor={scoreColor}
-          pulseStyle={pulseStyle}
-          onScorePress={() => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            setIsScoreModalVisible(true);
-          }}
-        />
 
         {(() => {
           if (isChecklistDismissed || isProfileLoading) return null;
@@ -517,18 +671,6 @@ export default function Home() {
           );
         })()}
 
-        <WeeklyCalendar selectedDate={selectedDate} onDateSelect={setSelectedDate} />
-
-        {targets.dailyCalories > 0 && user?.id && (
-          <DailyInsightCard 
-            consumedCalories={consumedMacros.calories} 
-            targetCalories={dailyCalories} 
-            protein={consumedMacros.protein} 
-            date={selectedDate}
-            userId={user.id}
-          />
-        )}
-
         {isToday && frequentMeals.length > 0 && (
           <SmartMealSuggestions
             meals={frequentMeals}
@@ -560,19 +702,44 @@ export default function Home() {
               />
             </Animated.View>
 
-            <Animated.View entering={FadeInDown.delay(200).duration(600)}>
+            <Animated.View entering={FadeInDown.delay(200).duration(600)} style={{ marginBottom: 16 }}>
               <WaterCard
                 targetLiters={targetWaterLiters}
                 consumedLiters={consumedWaterLiters}
                 onQuickLog={handleQuickLogWater}
+                onUndo={handleUndoWater}
+                isToday={isToday}
+                isFuture={isFuture}
+                dateLabel={format(selectedDate, 'MMM d')}
+              />
+            </Animated.View>
+
+            <Animated.View entering={FadeInDown.delay(250).duration(600)}>
+              <HealthMetricsCard 
+                onPress={() => router.push('/profile?sync=true' as any)} 
+                onManualEntry={() => setIsManualEntryVisible(true)}
+                data={health.data}
+                loading={health.loading}
+                error={health.error}
+                permissionGranted={health.permissionGranted}
+                isAvailable={health.isAvailable}
+                targets={targets}
+                isFuture={isFuture}
               />
             </Animated.View>
 
             <Animated.View entering={FadeInDown.delay(300).duration(600)}>
               <RecentActivity 
-                activities={logs} 
+                activities={logs.filter(log => 
+                  log.type !== 'steps' && 
+                  log.type !== 'sleep' && 
+                  log.type !== 'water'
+                )} 
                 onDelete={handleDeleteLog}
                 isToday={isToday}
+                hasMore={hasMoreLogs}
+                isLoadingMore={isMoreLogsLoading}
+                onLoadMore={loadMoreLogs}
               />
             </Animated.View>
           </Animated.View>
@@ -613,6 +780,21 @@ export default function Home() {
         breakdown={currentHealthScoreBreakdown}
         onProfilePress={() => router.push('/profile' as any)}
       />
+
+      {user && (
+        <ManualHealthEntryModal
+          isVisible={isManualEntryVisible}
+          onClose={() => {
+            setIsManualEntryVisible(false);
+            health.refresh();
+          }}
+          userId={user.id}
+          date={format(selectedDate, 'yyyy-MM-dd')}
+          initialSteps={healthData.steps}
+          initialSleep={healthData.sleepHours}
+        />
+      )}
+
     </SafeAreaView>
   );
 }

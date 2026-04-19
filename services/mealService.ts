@@ -1,5 +1,5 @@
-import { collection, query, where, orderBy, limit, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { format } from 'date-fns';
+import { addDoc, collection, getDocs, limit, orderBy, query, serverTimestamp, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 export interface FrequentMeal {
@@ -32,7 +32,7 @@ export const getFrequentMeals = async (userId: string): Promise<FrequentMeal[]> 
     snapshot.docs.forEach(doc => {
       const data = doc.data();
       const key = data.name.toLowerCase().trim();
-      
+
       if (!mealMap[key]) {
         mealMap[key] = {
           name: data.name,
@@ -53,7 +53,7 @@ export const getFrequentMeals = async (userId: string): Promise<FrequentMeal[]> 
     const frequentMeals = Object.values(mealMap)
       .filter((m: any) => m.count >= 2)
       .sort((a: any, b: any) => b.count - a.count)
-      .slice(0, 5) as FrequentMeal[];
+      .slice(0, 7) as FrequentMeal[];
 
     return frequentMeals;
   } catch (error) {

@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import { decode } from 'base64-arraybuffer';
 
 /**
  * Uploads an image from the AI Coach chat to Supabase Storage.
@@ -11,35 +12,34 @@ import * as FileSystem from 'expo-file-system';
  */
 export async function uploadChatImage(userId: string, imageUri: string): Promise<string> {
   try {
-    // 1. Prepare file buffer
-    // using newer expo-file-system File API if possible, otherwise readAsStringAsync
-    const file = new FileSystem.File(imageUri);
-    const arrayBuffer = await file.arrayBuffer();
+    // 1. Read the file as Base64 to ensure no corruption during transfer
+    const base64 = await FileSystem.readAsStringAsync(imageUri, {
+      encoding: 'base64' as any,
+    });
+    
+    // 2. Convert Base64 to ArrayBuffer (the format Supabase Storage expects)
+    const arrayBuffer = decode(base64);
 
-    // 2. Generate path: chat_cache/userId/timestamp_uuid.jpg
+    // 2. Generate path: chat/userId/timestamp.jpg
     const timestamp = Date.now();
-    const fileName = `${userId}/chat_${timestamp}.jpg`;
-    const storagePath = fileName;
+    const storagePath = `chat/${userId}/chat_${timestamp}.jpg`;
 
-    // 3. Upload to Supabase 'chat_history' bucket
-    // Note: ensure this bucket is set to 'public' in Supabase dashboard
+    // 3. Upload to Supabase 'progress_photos' bucket (which is confirmed to exist)
     const { data, error } = await supabase.storage
-      .from('chat_history')
+      .from('progress_photos')
       .upload(storagePath, arrayBuffer, {
         contentType: 'image/jpeg',
         upsert: false
       });
 
     if (error) {
-      // Fallback: If 'chat_history' doesn't exist, try 'progress_photos' if available
-      // but ideally we want a dedicated bucket.
-      console.error("[ChatStorage] Supabase Upload Error:", error);
-      throw new Error(`Upload failed: ${error.message}`);
+      console.error(`[ChatStorage] Upload failed. Error: ${error.message}`);
+      throw error;
     }
 
     // 4. Get Public URL
     const { data: urlData } = supabase.storage
-      .from('chat_history')
+      .from('progress_photos')
       .getPublicUrl(storagePath);
 
     return urlData.publicUrl;

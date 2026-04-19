@@ -74,3 +74,46 @@ export function getMusclesFromExercise(name: string): string[] {
 
   return [...new Set(muscles)];
 }
+/**
+ * Fetches the most recent performance (Last Session) for a specific user and exercise.
+ */
+export async function getLastExerciseLog(userId: string, exerciseName: string): Promise<ExercisePR | null> {
+  if (!userId || !exerciseName) return null;
+
+  try {
+    const logsRef = collection(db, 'logs');
+    const q = query(
+      logsRef,
+      where('userId', '==', userId),
+      where('type', '==', 'exercise'),
+      orderBy('timestamp', 'desc'),
+      limit(20)
+    );
+
+    const snapshot = await getDocs(q);
+    
+    // We search through the last 20 workouts for the MOST RECENT occurrence
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      const detailedLogs = data.metadata?.detailedLogs || [];
+      
+      const foundMatch = detailedLogs.find((log: any) => 
+        log.name.toLowerCase().includes(exerciseName.toLowerCase()) || 
+        exerciseName.toLowerCase().includes(log.name.toLowerCase())
+      );
+
+      if (foundMatch) {
+        return {
+          weight: parseFloat(foundMatch.maxWeight) || 0,
+          reps: foundMatch.repsAtMax || 0,
+          date: data.date
+        };
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('[WorkoutService] Last Session Error:', error);
+    return null;
+  }
+}

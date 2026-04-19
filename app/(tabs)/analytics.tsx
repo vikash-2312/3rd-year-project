@@ -32,6 +32,7 @@ import Animated, {
 import { StreakModal } from "../../components/StreakModal";
 import { db } from "../../lib/firebase";
 import { useTheme } from "../../lib/ThemeContext";
+import { typography } from "../../lib/typography";
 import {
   deleteProgressPhoto,
   getBeforeAfterPhotos,
@@ -39,6 +40,9 @@ import {
   subscribeToUserPhotos
 } from "../../services/progressPhotoService";
 import { calculateStreak, subscribeToActiveDays } from "../../services/streakService";
+import { calculateUnifiedHealthScore } from "../../services/healthScore";
+import { AnalyticsHeader } from "../../components/AnalyticsHeader";
+import { useHealthData } from "../../hooks/useHealthData";
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -74,6 +78,11 @@ export default function Analytics() {
   const [activeSegment, setActiveSegment] = useState<'visual' | 'data'>('visual');
   const segmentX = useSharedValue(0); // For animated indicator (not used yet, will add later)
 
+  // Health Data for Header Ring
+  const health = useHealthData(user?.id);
+
+  const [todayLogs, setTodayLogs] = useState<any[]>([]);
+
   const today = new Date();
   const weekDays = Array.from({ length: 7 }, (_, i) => subDays(today, 6 - i));
   const weekDayLabels = weekDays.map(d => format(d, 'EEEEE')); // Dynamic labels (S, M, T...)
@@ -89,7 +98,18 @@ export default function Analytics() {
       }
     });
 
-    // 2. Fetch Weekly Logs for Streak and Energy
+    // 2. Fetch Today's Logs (Identical to Home/Profile for 100% score parity)
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const todayQuery = query(
+      collection(db, 'logs'), 
+      where('userId', '==', user.id), 
+      where('date', '==', today)
+    );
+    const unsubscribeToday = onSnapshot(todayQuery, (snapshot) => {
+      setTodayLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    // 3. Fetch Weekly Logs for Streak and Energy
     const thirtyDaysAgo = subDays(new Date(), 30);
     const thirtyDaysAgoStr = format(thirtyDaysAgo, 'yyyy-MM-dd');
 
@@ -149,7 +169,7 @@ export default function Analytics() {
         }))
         .sort((a, b) => a.date.localeCompare(b.date)); // Chronological order
 
-      setWeightHistory(history.slice(-30));
+      setWeightHistory(history);
     }, (error) => {
       console.error("Weight History Snapshot Error:", error);
     });
@@ -167,11 +187,23 @@ export default function Analytics() {
     return () => {
       unsubscribeUser();
       unsubscribeLogs();
+      unsubscribeToday();
       unsubscribeWeight();
       unsubscribePhotos();
       unsubscribeStreak();
     };
   }, [user]);
+
+  const currentConsumedMacros = useMemo(() => {
+    return todayLogs.reduce((acc, log) => ({
+      calories: acc.calories + (log.type === 'food' || log.type === 'ai_log' ? (Number(log.calories) || 0) : 0),
+      protein: acc.protein + (Number(log.protein) || 0),
+      carbs: acc.carbs + (Number(log.carbs) || 0),
+      fats: acc.fats + (Number(log.fat) || Number(log.fats) || 0),
+      water: acc.water + (Number(log.waterLiters) || 0),
+      exerciseMinutes: acc.exerciseMinutes + (log.type === 'exercise' ? (Number(log.duration) || 0) : 0),
+    }), { calories: 0, protein: 0, carbs: 0, fats: 0, water: 0, exerciseMinutes: 0 });
+  }, [todayLogs]);
 
   const streakCount = calculateStreak(weekActivity);
 
@@ -331,9 +363,6 @@ export default function Analytics() {
     }, 1000);
   }, []);
 
-  const latestLoggedWeight = weightHistory.length > 0 ? weightHistory[weightHistory.length - 1].weight : null;
-  const weight = latestLoggedWeight || userData?.profile?.measurements?.weightKg || userData?.onboarding_weight || "--";
-
   // Filter weight history based on selected timeframe
   const filteredWeightHistory = useMemo(() => {
     if (weightHistory.length === 0) return [];
@@ -345,15 +374,14 @@ export default function Analytics() {
     return weightHistory.filter(h => h.date >= cutoffStr);
   }, [weightHistory, weightTimeframe]);
 
-  const totalConsumed = dailyConsumed.reduce((a, b) => a + b, 0);
-  const totalBurned = dailyBurned.reduce((a, b) => a + b, 0);
-  const netEnergy = totalConsumed - totalBurned;
+  const totalConsumed = useMemo(() => dailyConsumed.reduce((a, b) => a + b, 0), [dailyConsumed]);
+  const totalBurned = useMemo(() => dailyBurned.reduce((a, b) => a + b, 0), [dailyBurned]);
+  const netEnergy = useMemo(() => totalConsumed - totalBurned, [totalConsumed, totalBurned]);
+  const maxEnergyValue = useMemo(() => Math.max(...dailyConsumed, ...dailyBurned, 1), [dailyConsumed, dailyBurned]);
+  const avgConsumed = useMemo(() => totalConsumed / 7, [totalConsumed]);
+  const avgBurned = useMemo(() => totalBurned / 7, [totalBurned]);
 
-  const maxEnergyValue = Math.max(...dailyConsumed, ...dailyBurned, 1);
-  const avgConsumed = totalConsumed / 7;
-  const avgBurned = totalBurned / 7;
-
-  const waterChartData = {
+  const waterChartData = useMemo(() => ({
     labels: weekDayLabels,
     datasets: [
       {
@@ -362,11 +390,11 @@ export default function Analytics() {
         strokeWidth: 3
       }
     ]
-  };
+  }), [dailyWater, weekDayLabels]);
 
-  const chartConfig = {
-    backgroundGradientFrom: colors.chartBg,
-    backgroundGradientTo: colors.chartBg,
+  const chartConfig = useMemo(() => ({
+    backgroundGradientFrom: colors.chartBg || colors.card,
+    backgroundGradientTo: colors.chartBg || colors.card,
     decimalPlaces: 0,
     color: (opacity = 1) => isDark ? `rgba(226, 232, 240, ${opacity})` : `rgba(45, 55, 72, ${opacity})`,
     labelColor: (opacity = 1) => isDark ? `rgba(160, 174, 192, ${opacity})` : `rgba(113, 128, 150, ${opacity})`,
@@ -376,51 +404,37 @@ export default function Analytics() {
       strokeDasharray: '4',
       stroke: colors.border,
     },
-  };
+  }), [colors, isDark]);
 
   const targetWeight = userData?.profile?.measurements?.targetWeightKg || null;
-  const minWeight = (weightHistory || []).length > 0 ? Math.min(...(weightHistory || []).map(h => h?.weight || 0)) : 50;
-  const maxWeight = (weightHistory || []).length > 0 ? Math.max(...(weightHistory || []).map(h => h?.weight || 100)) : 100;
 
-  const dataMin = targetWeight ? Math.min(minWeight, targetWeight) : minWeight;
-  const dataMax = targetWeight ? Math.max(maxWeight, targetWeight) : maxWeight;
-  const range = dataMax - dataMin;
-  const padding = Math.max(range * 0.2, 1.25);
-
-  const weightTrendData = {
-    labels: (weightHistory || []).length <= 1
-      ? ["Today"]
-      : (weightHistory || []).map((h, i) => {
-        const isFirst = i === 0;
-        const isLast = i === (weightHistory || []).length - 1;
-        const isMid = i === Math.floor((weightHistory || []).length / 2);
-        if (isFirst || isLast || (isMid && (weightHistory || []).length > 3)) {
-          return h?.date ? format(new Date(h.date), 'MMM d') : "";
-        }
-        return "";
-      }),
-    datasets: [
-      {
-        data: (weightHistory || []).length === 1
-          ? [(weightHistory || [])[0].weight, (weightHistory || [])[0].weight]
-          : ((weightHistory || []).length > 0 ? (weightHistory || []).map(h => h?.weight || 0) : [0]),
-        color: (opacity = 1) => `rgba(0, 144, 80, ${opacity})`,
-        strokeWidth: 3
+  const currentHealthScore = useMemo(() => {
+    if (!userData?.profile?.macros) return 0;
+    const targets = userData.profile.macros;
+    const score = calculateUnifiedHealthScore({
+      consumed: {
+        calories: currentConsumedMacros.calories,
+        protein: currentConsumedMacros.protein,
+        carbs: currentConsumedMacros.carbs,
+        fat: currentConsumedMacros.fats,
+        water: currentConsumedMacros.water,
+        exerciseMinutes: currentConsumedMacros.exerciseMinutes
       },
-      ...(targetWeight ? [{
-        data: weightHistory.length <= 1 ? [targetWeight, targetWeight] : weightHistory.map(() => targetWeight),
-        color: (opacity = 1) => isDark ? `rgba(214, 158, 46, 0.4)` : `rgba(214, 158, 46, 0.3)`,
-        strokeWidth: 1,
-        withDots: false,
-      }] : []),
-      {
-        data: [dataMin - padding, dataMax + padding],
-        withDots: false,
-        color: () => 'transparent',
-        strokeWidth: 0,
-      }
-    ]
-  };
+      targets: {
+        dailyCalories: targets.dailyCalories || 2000,
+        proteinGrams: targets.proteinGrams || 150,
+        carbsGrams: targets.carbsGrams || 200,
+        fatsGrams: targets.fatsGrams || 65,
+        dailySteps: targets.dailySteps || 10000,
+        waterIntakeLiters: targets.waterIntakeLiters || 2.5,
+        exerciseMinutes: targets.exerciseMinutes || 30,
+        sleepHours: targets.sleepHours || 8
+      },
+      todaySteps: health.data.steps,
+      todaySleep: health.data.sleepHours || 0
+    });
+    return score.total;
+  }, [currentConsumedMacros, userData, health.data]);
 
   if (isLoading && !userData) {
     return (
@@ -432,16 +446,16 @@ export default function Analytics() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <View style={styles.headerTitleRow}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Progress</Text>
-          <TouchableOpacity 
-            onPress={() => router.push('/update-weight' as any)}
-            style={[styles.miniUpdateBtn, { backgroundColor: colors.accentLight }]}>
-            <HugeiconsIcon icon={TrendingDown} size={16} color={colors.accent} />
-            <Text style={[styles.miniUpdateText, { color: colors.accent }]}>Log Weight</Text>
-          </TouchableOpacity>
-        </View>
+      <AnalyticsHeader 
+        userData={userData}
+        healthScore={currentHealthScore}
+        onUpdateWeight={() => router.push('/update-weight' as any)}
+      />
+      <ScrollView 
+        style={styles.container} 
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
 
         {/* Segmented Control */}
         <View style={[styles.segmentedContainer, { backgroundColor: isDark ? '#1A202C' : '#EDF2F7' }]}>
@@ -1097,9 +1111,8 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
   headerTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    marginBottom: 24,
+    fontSize: 28,
+    fontWeight: '900',
   },
   shareRow: {
     flexDirection: 'row',
@@ -1394,47 +1407,34 @@ const styles = StyleSheet.create({
   },
   segmentedContainer: {
     flexDirection: 'row',
-    padding: 4,
-    borderRadius: 16,
-    marginBottom: 20,
-    marginHorizontal: 4,
+    padding: 6,
+    borderRadius: 20,
+    marginBottom: 24,
+    marginHorizontal: 0,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
   },
   segmentItem: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
+    borderRadius: 16,
   },
   segmentActive: {
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 4,
   },
   segmentText: {
-    fontSize: 15,
-    fontWeight: '600',
+    ...typography.label,
+    fontSize: 14,
+    fontWeight: '700',
+    opacity: 0.7,
   },
   segmentTextActive: {
-    fontWeight: '700',
-  },
-  headerTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  miniUpdateBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    gap: 6,
-  },
-  miniUpdateText: {
-    fontSize: 13,
+    opacity: 1,
     fontWeight: '700',
   },
   unlockCard: {

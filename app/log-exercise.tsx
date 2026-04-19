@@ -44,7 +44,7 @@ export default function LogExerciseScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         {/* Option: AI Workout Generator */}
         <TouchableOpacity 
-          onPress={() => router.push('/ai-workout')} 
+          onPress={() => router.push('/(tabs)/workouts')} 
           activeOpacity={0.9}
           style={styles.aiCardContainer}
         >

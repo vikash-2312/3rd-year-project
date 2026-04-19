@@ -28,14 +28,20 @@ export const adjustPlan = (currentPlan: MacroPlan, feedback: AdjustmentFeedback)
   const newCalories = currentPlan.dailyCalories + calorieAdjustment;
 
   // Re-calculate macros based on new calories keeping same protein grams
-  // (Assuming protein is usually fixed by weight, and we adjust carbs/fats)
-  // We'll adjust carbs for the calorie difference
+  // We distribute the adjustment across carbs and fats (75/25 split)
+  // to maintain a healthy macro balance instead of only moving carbs.
   const calorieDiff = newCalories - currentPlan.dailyCalories;
-  const carbsAdjustment = Math.round(calorieDiff / 4);
+  
+  const fatsCalorieAdj = calorieDiff * 0.25;
+  const carbsCalorieAdj = calorieDiff * 0.75;
+
+  const fatsGramsAdj = Math.round(fatsCalorieAdj / 9);
+  const carbsGramsAdj = Math.round(carbsCalorieAdj / 4);
 
   return {
     ...currentPlan,
     dailyCalories: newCalories,
-    carbsGrams: Math.max(currentPlan.carbsGrams + carbsAdjustment, 0),
+    fatsGrams: Math.max(currentPlan.fatsGrams + fatsGramsAdj, 0),
+    carbsGrams: Math.max(currentPlan.carbsGrams + carbsGramsAdj, 0),
   };
 };

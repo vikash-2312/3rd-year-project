@@ -2,7 +2,7 @@ import { ClerkLoaded, ClerkProvider, useAuth, useUser } from '@clerk/expo';
 import * as Notifications from 'expo-notifications';
 import { Redirect, Stack, useSegments, router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -16,6 +16,7 @@ import {
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ThemeProvider } from '../lib/ThemeContext';
+import { HealthProvider } from '../context/HealthContext';
 
 const tokenCache = {
   async getToken(key: string) {
@@ -40,6 +41,14 @@ if (!publishableKey) {
   throw new Error('Missing Publishable Key. Please set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY in your .env');
 }
 
+// ── Loading Overlay Component ────────────────────────────────────
+const LoadingGate = ({ message }: { message?: string }) => (
+  <View style={styles.overlayContainer}>
+    <ActivityIndicator size="large" color="#FF6B6B" />
+    {message && <Text style={styles.overlayText}>{message}</Text>}
+  </View>
+);
+
 const InitialLayout = () => {
   const { isSignedIn, isLoaded } = useAuth();
   const { user } = useUser();
@@ -52,28 +61,27 @@ const InitialLayout = () => {
       try {
         const val = await AsyncStorage.getItem('is_signing_in');
         const isCurrentlySigningIn = val === 'true';
-        setIsSigningIn(isCurrentlySigningIn);
-
-        // [BRIDGED CLEANUP] 
+        setIsSigningIn(prev => prev !== isCurrentlySigningIn ? isCurrentlySigningIn : prev);
+        
         if (isSignedIn && (isCurrentlySigningIn || authBridge.isSigningIn)) {
           console.log('[InitialLayout] Bridged Cleanup: User is signed in, clearing transition flags');
-          await AsyncStorage.removeItem('is_signing_in');
+          await AsyncStorage.removeItem('is_signing_in').catch(() => {});
           authBridge.isSigningIn = false;
-          setIsSigningIn(false);
+          setIsSigningIn(prev => prev !== false ? false : prev);
         }
       } catch (e) {
-        setIsSigningIn(false);
+        setIsSigningIn(prev => prev !== false ? false : prev);
       } finally {
-        setIsHydrated(true);
+        setIsHydrated(prev => prev !== true ? true : prev);
       }
     };
     checkSigningIn();
     
     const interval = setInterval(checkSigningIn, 2000);
     return () => clearInterval(interval);
-  }, [segments, isSignedIn]);
+  }, [isSignedIn]); // segments removed to prevent redundant updates during navigation
 
-  const effectiveSigningIn = isSigningIn || authBridge.isSigningIn;
+  const effectiveSigningIn = useMemo(() => isSigningIn || authBridge.isSigningIn, [isSigningIn]);
 
   console.log('[InitialLayout] isLoaded:', isLoaded, 'isSignedIn:', isSignedIn, 'isSigningIn:', effectiveSigningIn, 'isHydrated:', isHydrated);
 
@@ -117,7 +125,7 @@ const InitialLayout = () => {
     }
   }, [isSignedIn, user?.id]);
 
-  const inAuthGroup = segments[0] === '(auth)';
+  const inAuthGroup = useMemo(() => segments[0] === '(auth)', [segments]);
 
   // ── Imperative Routing Monitor ──────────────────────────────────
   useEffect(() => {
@@ -143,13 +151,7 @@ const InitialLayout = () => {
     return () => clearTimeout(timer);
   }, [isSignedIn, isLoaded, isHydrated, effectiveSigningIn, inAuthGroup]);
 
-  // ── Loading Overlay Component ────────────────────────────────────
-  const LoadingGate = ({ message }: { message?: string }) => (
-    <View style={styles.overlayContainer}>
-      <ActivityIndicator size="large" color="#FF6B6B" />
-      {message && <Text style={styles.overlayText}>{message}</Text>}
-    </View>
-  );
+
 
   return (
     <View style={{ flex: 1 }}>
@@ -176,10 +178,6 @@ const InitialLayout = () => {
         />
         <Stack.Screen
           name="add-progress-photo"
-          options={{ headerShown: false, animation: 'slide_from_bottom', presentation: 'modal' }}
-        />
-        <Stack.Screen
-          name="ai-coach"
           options={{ headerShown: false, animation: 'slide_from_bottom', presentation: 'modal' }}
         />
         <Stack.Screen
@@ -214,9 +212,11 @@ export default function RootLayout() {
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
       <ClerkLoaded>
         <ThemeProvider>
-          <GestureHandlerRootView style={{ flex: 1 }}>
-            <InitialLayout />
-          </GestureHandlerRootView>
+          <HealthProvider>
+            <GestureHandlerRootView style={{ flex: 1 }}>
+              <InitialLayout />
+            </GestureHandlerRootView>
+          </HealthProvider>
         </ThemeProvider>
       </ClerkLoaded>
     </ClerkProvider>

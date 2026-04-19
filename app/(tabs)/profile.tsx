@@ -59,6 +59,10 @@ import * as Haptics from 'expo-haptics';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { ProfileStatsTemplate } from '../../components/profile/ProfileStatsTemplate';
+import { DailyShareModal } from "../../components/DailyShareModal";
+import { Share02Icon } from '@hugeicons/core-free-icons';
+import { useHealthData } from '../../hooks/useHealthData';
+import { calculateUnifiedHealthScore } from '../../services/healthScore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -73,7 +77,9 @@ export default function Profile() {
   const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isHealthModalVisible, setIsHealthModalVisible] = useState(false);
+  const [isDailyShareModalVisible, setIsDailyShareModalVisible] = useState(false);
   const params = useLocalSearchParams();
+  const health = useHealthData(user?.id);
 
   // Handle auto-open for Health Sync from Checklist
   useEffect(() => {
@@ -112,7 +118,14 @@ export default function Profile() {
   };
 
   const handleLogout = () => {
-    signOut();
+    Alert.alert(
+      'Log Out',
+      'Are you sure you want to log out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Log Out', style: 'destructive', onPress: () => signOut() },
+      ]
+    );
   };
 
   const [todayJournal, setTodayJournal] = useState<any>(null);
@@ -191,7 +204,62 @@ export default function Profile() {
     fetchLifetimeStats();
   }, [user]);
 
-  const [activePersona, setActivePersona] = useState('motivational');
+  // Today's Stats for Daily Share Card
+  const [todayLogs, setTodayLogs] = useState<any[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const q = query(collection(db, 'logs'), where('userId', '==', user.id), where('date', '==', today));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setTodayLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  const consumedMacros = useMemo(() => {
+    return todayLogs.reduce((acc, log) => ({
+      calories: acc.calories + (log.type === 'food' || log.type === 'ai_log' ? (Number(log.calories) || 0) : 0),
+      protein: acc.protein + (Number(log.protein) || 0),
+      carbs: acc.carbs + (Number(log.carbs) || 0),
+      fats: acc.fats + (Number(log.fat) || Number(log.fats) || 0),
+      water: acc.water + (Number(log.waterLiters) || 0),
+      exerciseMinutes: acc.exerciseMinutes + (log.type === 'exercise' ? (Number(log.duration) || 0) : 0),
+    }), { calories: 0, protein: 0, carbs: 0, fats: 0, water: 0, exerciseMinutes: 0 });
+  }, [todayLogs]);
+
+  const healthScoreStats = useMemo(() => {
+    if (!userData || !userData.profile || !userData.profile.macros) return { total: 0 };
+    
+    // Bug 6 Fix: Correct field paths from onboarding
+    const targets = {
+      dailyCalories: userData.profile.macros.dailyCalories || 2000,
+      proteinGrams: userData.profile.macros.proteinGrams || 150,
+      carbsGrams: userData.profile.macros.carbsGrams || 200,
+      fatsGrams: userData.profile.macros.fatsGrams || 65,
+      dailySteps: userData.profile.macros.dailySteps || 10000,
+      waterIntakeLiters: userData.profile.macros.waterIntakeLiters || 2.5,
+      exerciseMinutes: userData.profile.macros.exerciseMinutes || 30,
+      sleepHours: userData.profile.macros.sleepHours || 8
+    };
+
+    // Bug 1 Fix: Use Unified Logic
+    return calculateUnifiedHealthScore({
+      consumed: {
+        calories: consumedMacros.calories,
+        protein: consumedMacros.protein,
+        carbs: consumedMacros.carbs,
+        fat: consumedMacros.fats,
+        water: consumedMacros.water,
+        exerciseMinutes: consumedMacros.exerciseMinutes
+      },
+      targets,
+      todaySteps: health.data.steps,
+      todaySleep: health.data.sleepHours || 0
+    });
+  }, [consumedMacros, health.data, userData]);
+
+  const currentHealthScore = healthScoreStats.total;
+
   const [selectedShareTheme, setSelectedShareTheme] = useState<'emerald' | 'midnight' | 'arctic'>('emerald');
 
   const shareThemes = [
@@ -408,6 +476,29 @@ export default function Profile() {
           </View>
         </Animated.View>
 
+        {/* Daily Achievement Entry Point */}
+        <Animated.View entering={FadeInDown.delay(220).duration(800).springify()}>
+          <TouchableOpacity 
+            style={[styles.dailyShareAction, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setIsDailyShareModalVisible(true);
+            }}
+          >
+            <LinearGradient
+              colors={isDark ? ['#065F46', '#064E3B'] : ['#ECFDF5', '#D1FAE5']}
+              style={styles.dailyShareIcon}
+            >
+              <HugeiconsIcon icon={ActivityIcon} size={24} color={isDark ? '#34D399' : '#059669'} />
+            </LinearGradient>
+            <View style={styles.dailyShareText}>
+              <Text style={[styles.dailyShareTitle, { color: colors.text }]}>Today's Achievement</Text>
+              <Text style={[styles.dailyShareSubtitle, { color: colors.textTertiary }]}>Generate a shareable card for today</Text>
+            </View>
+            <HugeiconsIcon icon={Share02Icon} size={20} color={colors.accent} />
+          </TouchableOpacity>
+        </Animated.View>
+
         <Animated.View 
           entering={FadeInDown.delay(200).duration(800).springify()}
           style={styles.themeSelector}
@@ -511,42 +602,7 @@ export default function Profile() {
 
         {/* Health Dashboard Component Moved to Modal */}
 
-        <View style={styles.sectionContainer}>
-          <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>AI Coach Persona</Text>
-          <View style={[styles.card, { backgroundColor: colors.card, paddingVertical: 12 }]}>
-            <View style={styles.personaContainer}>
-              {[
-                { id: 'motivational', name: 'Motive', icon: SmileIcon, color: '#009050' },
-                { id: 'clinical', name: 'Clinical', icon: DashboardCircleIcon, color: '#3182CE' },
-                { id: 'tough', name: 'Stern', icon: AngryIcon, color: '#E53E3E' },
-              ].map((persona) => (
-                <TouchableOpacity
-                  key={persona.id}
-                  style={[
-                    styles.personaButton,
-                    activePersona === persona.id && { backgroundColor: `${persona.color}15`, borderColor: persona.color }
-                  ]}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    setActivePersona(persona.id);
-                  }}
-                >
-                  <HugeiconsIcon 
-                    icon={persona.icon} 
-                    size={22} 
-                    color={activePersona === persona.id ? persona.color : colors.textMuted} 
-                  />
-                  <Text style={[
-                    styles.personaName, 
-                    { color: activePersona === persona.id ? colors.text : colors.textTertiary }
-                  ]}>
-                    {persona.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        </View>
+
 
 
         <TouchableOpacity 
@@ -582,6 +638,27 @@ export default function Profile() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      <DailyShareModal
+        isVisible={isDailyShareModalVisible}
+        onClose={() => setIsDailyShareModalVisible(false)}
+        logs={todayLogs}
+        stats={{
+          calories: Math.round(consumedMacros.calories),
+          targetCalories: userData?.profile?.daily_calories || 2000,
+          protein: Math.round(consumedMacros.protein),
+          targetProtein: userData?.profile?.protein_grams || 150,
+          steps: health.data.steps,
+          targetSteps: userData?.profile?.daily_steps || 10000,
+          water: consumedMacros.water,
+          targetWater: userData?.profile?.target_water || 2.5,
+          exerciseMinutes: consumedMacros.exerciseMinutes,
+          targetExercise: userData?.profile?.target_exercise || 30,
+          sleepHours: health.data.sleepHours || 0,
+          targetSleep: userData?.profile?.target_sleep || 8,
+          healthScore: currentHealthScore,
+        }}
+      />
 
       {/* Hidden Sharing Template */}
       <View style={styles.hiddenTemplate}>
@@ -838,6 +915,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     marginLeft: 10,
+  },
+  dailyShareAction: {
+    marginHorizontal: 24,
+    marginBottom: 24,
+    padding: 16,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  dailyShareIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dailyShareText: {
+    flex: 1,
+    marginLeft: 16,
+  },
+  dailyShareTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  dailyShareSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
   },
   sectionContainer: {
     marginBottom: 16,

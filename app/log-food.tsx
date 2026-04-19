@@ -20,21 +20,21 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db } from '../lib/firebase';
 import { Button } from '../components/Button';
+import { getFoodDetails, Serving } from '../lib/fatsecret';
 
 export default function LogFoodScreen() {
   const router = useRouter();
   const { user } = useUser();
   const params = useLocalSearchParams();
 
-  // Helper to parse initial quantity from serving string (e.g. "1 cup" -> 1)
+  // Helper to parse initial quantity from serving string (e.g. "Per 100g" -> 100, "1 cup" -> 1)
   const parseInitialQuantity = (servingStr: string) => {
-    const match = servingStr.match(/^(\d+(\.\d+)?)/);
+    const match = servingStr.match(/(\d+(\.\d+)?)/);
     return match ? parseFloat(match[1]) : 1;
   };
 
   const parseInitialUnit = (servingStr: string) => {
-    const match = servingStr.match(/^\d+(\.\d+)?\s*(.*)$/);
-    return match ? match[2] : servingStr;
+    return servingStr.replace(/Per /i, '').replace(/\d+(\.\d+)?/, '').trim() || 'serving';
   };
 
   const initialQty = parseInitialQuantity((params.serving as string) || '1');
@@ -47,10 +47,15 @@ export default function LogFoodScreen() {
     const safeQty = qty || 1;
     return isNaN(val) ? 0 : val / safeQty;
   };
-  const [baseCalories] = useState(() => safeDivide((params.calories || params.aiCalories) as string, initialQty));
-  const [baseProtein] = useState(() => safeDivide((params.protein || params.aiProtein) as string, initialQty));
-  const [baseCarbs] = useState(() => safeDivide((params.carbs || params.aiCarbs) as string, initialQty));
-  const [baseFat] = useState(() => safeDivide((params.fat || params.aiFat) as string, initialQty));
+  const [baseCalories, setBaseCalories] = useState(() => safeDivide((params.calories || params.aiCalories) as string, initialQty));
+  const [baseProtein, setBaseProtein] = useState(() => safeDivide((params.protein || params.aiProtein) as string, initialQty));
+  const [baseCarbs, setBaseCarbs] = useState(() => safeDivide((params.carbs || params.aiCarbs) as string, initialQty));
+  const [baseFat, setBaseFat] = useState(() => safeDivide((params.fat || params.aiFat) as string, initialQty));
+  const [baseFiber, setBaseFiber] = useState(() => safeDivide(params.fiber as string, initialQty));
+  const [baseSugar, setBaseSugar] = useState(() => safeDivide(params.sugar as string, initialQty));
+  const [baseAddedSugar, setBaseAddedSugar] = useState(() => safeDivide(params.addedSugar as string, initialQty));
+  const [baseCalcium, setBaseCalcium] = useState(() => safeDivide(params.calcium as string, initialQty));
+  const [baseSodium, setBaseSodium] = useState(() => safeDivide(params.sodium as string, initialQty));
 
   // States
   const [foodName] = useState((params.foodName || params.aiName) as string || 'Selected Food');
@@ -63,8 +68,115 @@ export default function LogFoodScreen() {
   const [protein, setProtein] = useState((params.protein || params.aiProtein) as string || '0');
   const [carbs, setCarbs] = useState((params.carbs || params.aiCarbs) as string || '0');
   const [fat, setFat] = useState((params.fat || params.aiFat) as string || '0');
+  const [fiber, setFiber] = useState(params.fiber as string || '0');
+  const [sugar, setSugar] = useState(params.sugar as string || '0');
+  const [addedSugar, setAddedSugar] = useState(params.addedSugar as string || '0');
+  const [calcium, setCalcium] = useState(params.calcium as string || '0');
+  const [sodium, setSodium] = useState(params.sodium as string || '0');
 
   const [isLogging, setIsLogging] = useState(false);
+  
+  const [servings, setServings] = useState<Serving[]>([]);
+  const [isFetchingServings, setIsFetchingServings] = useState(false);
+  const [selectedServing, setSelectedServing] = useState<Serving | null>(null);
+
+  React.useEffect(() => {
+    if (params.foodId) {
+      setIsFetchingServings(true);
+      getFoodDetails(params.foodId as string)
+        .then(data => {
+          setServings(data);
+          if (data.length > 0) {
+            const matchedServing = data.find(s => {
+              const desc = s.serving_description.toLowerCase().replace(/\s+/g, '');
+              const target = initialUnit.toLowerCase().replace(/\s+/g, '');
+              return desc === target || s.measurement_description.toLowerCase() === target || desc.includes(target);
+            }) || data[0];
+            
+            setSelectedServing(matchedServing);
+            setUnit(matchedServing.measurement_description);
+            
+            const units = parseFloat(matchedServing.number_of_units || '1');
+            const multiplier = units > 0 ? 1 / units : 1;
+            const newBaseCals = parseFloat(matchedServing.calories || '0') * multiplier;
+            const newBaseProtein = parseFloat(matchedServing.protein || '0') * multiplier;
+            const newBaseCarbs = parseFloat(matchedServing.carbs || '0') * multiplier;
+            const newBaseFat = parseFloat(matchedServing.fat || '0') * multiplier;
+            const newBaseFiber = parseFloat(matchedServing.fiber || '0') * multiplier;
+            const newBaseSugar = parseFloat(matchedServing.sugar || '0') * multiplier;
+            const newBaseAddedSugar = parseFloat(matchedServing.added_sugar || '0') * multiplier;
+            const newBaseCalcium = parseFloat(matchedServing.calcium || '0') * multiplier;
+            const newBaseSodium = parseFloat(matchedServing.sodium || '0') * multiplier;
+            
+            setBaseCalories(newBaseCals);
+            setBaseProtein(newBaseProtein);
+            setBaseCarbs(newBaseCarbs);
+            setBaseFat(newBaseFat);
+            setBaseFiber(newBaseFiber);
+            setBaseSugar(newBaseSugar);
+            setBaseAddedSugar(newBaseAddedSugar);
+            setBaseCalcium(newBaseCalcium);
+            setBaseSodium(newBaseSodium);
+
+            setQuantity(prevQty => {
+              const num = parseFloat(prevQty) || 1;
+              setCalories((newBaseCals * num).toFixed(0));
+              setProtein((newBaseProtein * num).toFixed(1));
+              setCarbs((newBaseCarbs * num).toFixed(1));
+              setFat((newBaseFat * num).toFixed(1));
+              setFiber((newBaseFiber * num).toFixed(1));
+              setSugar((newBaseSugar * num).toFixed(1));
+              setAddedSugar((newBaseAddedSugar * num).toFixed(1));
+              setCalcium((newBaseCalcium * num).toFixed(0));
+              setSodium((newBaseSodium * num).toFixed(0));
+              return prevQty;
+            });
+          }
+        })
+        .catch(e => console.log('Failed to fetch detailed servings:', e))
+        .finally(() => setIsFetchingServings(false));
+    }
+  }, [params.foodId]);
+
+  const handleSelectServing = (s: Serving) => {
+    setSelectedServing(s);
+    setUnit(s.measurement_description);
+    
+    const units = parseFloat(s.number_of_units || '1');
+    const multiplier = units > 0 ? 1 / units : 1;
+    const newBaseCals = parseFloat(s.calories || '0') * multiplier;
+    const newBaseProtein = parseFloat(s.protein || '0') * multiplier;
+    const newBaseCarbs = parseFloat(s.carbs || '0') * multiplier;
+    const newBaseFat = parseFloat(s.fat || '0') * multiplier;
+    const newBaseFiber = parseFloat(s.fiber || '0') * multiplier;
+    const newBaseSugar = parseFloat(s.sugar || '0') * multiplier;
+    const newBaseAddedSugar = parseFloat(s.added_sugar || '0') * multiplier;
+    const newBaseCalcium = parseFloat(s.calcium || '0') * multiplier;
+    const newBaseSodium = parseFloat(s.sodium || '0') * multiplier;
+    
+    setBaseCalories(newBaseCals);
+    setBaseProtein(newBaseProtein);
+    setBaseCarbs(newBaseCarbs);
+    setBaseFat(newBaseFat);
+    setBaseFiber(newBaseFiber);
+    setBaseSugar(newBaseSugar);
+    setBaseAddedSugar(newBaseAddedSugar);
+    setBaseCalcium(newBaseCalcium);
+    setBaseSodium(newBaseSodium);
+
+    const num = parseFloat(quantity);
+    if (!isNaN(num) && num >= 0) {
+      setCalories((newBaseCals * num).toFixed(0));
+      setProtein((newBaseProtein * num).toFixed(1));
+      setCarbs((newBaseCarbs * num).toFixed(1));
+      setFat((newBaseFat * num).toFixed(1));
+      setFiber((newBaseFiber * num).toFixed(1));
+      setSugar((newBaseSugar * num).toFixed(1));
+      setAddedSugar((newBaseAddedSugar * num).toFixed(1));
+      setCalcium((newBaseCalcium * num).toFixed(0));
+      setSodium((newBaseSodium * num).toFixed(0));
+    }
+  };
 
   // Handle scaling when quantity changes
   const handleQuantityChange = (val: string) => {
@@ -75,6 +187,11 @@ export default function LogFoodScreen() {
       setProtein((baseProtein * num).toFixed(1));
       setCarbs((baseCarbs * num).toFixed(1));
       setFat((baseFat * num).toFixed(1));
+      setFiber((baseFiber * num).toFixed(1));
+      setSugar((baseSugar * num).toFixed(1));
+      setAddedSugar((baseAddedSugar * num).toFixed(1));
+      setCalcium((baseCalcium * num).toFixed(0));
+      setSodium((baseSodium * num).toFixed(0));
     }
   };
 
@@ -94,6 +211,11 @@ export default function LogFoodScreen() {
         protein: parseFloat(protein) || 0,
         carbs: parseFloat(carbs) || 0,
         fat: parseFloat(fat) || 0,
+        fiber: parseFloat(fiber) || 0,
+        sugar: parseFloat(sugar) || 0,
+        addedSugar: parseFloat(addedSugar) || 0,
+        calcium: parseFloat(calcium) || 0,
+        sodium: parseFloat(sodium) || 0,
         timestamp: serverTimestamp(),
         date: format(new Date(), 'yyyy-MM-dd'), // Local date for grouping
       };
@@ -134,6 +256,23 @@ export default function LogFoodScreen() {
 
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Serving Size</Text>
+            {isFetchingServings ? (
+              <ActivityIndicator size="small" color="#009050" style={{ marginVertical: 10, alignSelf: 'flex-start' }} />
+            ) : servings.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.servingsScroll} contentContainerStyle={styles.servingsScrollContent}>
+                {servings.map(s => (
+                  <TouchableOpacity 
+                    key={s.serving_id} 
+                    style={[styles.servingPill, selectedServing?.serving_id === s.serving_id && styles.servingPillActive]}
+                    onPress={() => handleSelectServing(s)}
+                  >
+                    <Text style={[styles.servingPillText, selectedServing?.serving_id === s.serving_id && styles.servingPillTextActive]}>
+                      {s.serving_description}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            ) : null}
             <View style={styles.servingInputRow}>
               <TextInput
                 style={[styles.textInput, { flex: 0.3, marginRight: 12 }]}
@@ -217,14 +356,94 @@ export default function LogFoodScreen() {
                 <Text style={styles.unitLabel}>g</Text>
               </View>
             </View>
+
+            <View style={[styles.macroItem, styles.fiberBg]}>
+              <View style={styles.macroHeader}>
+                <View style={styles.fiberDot} />
+                <Text style={[styles.macroLabel, { color: '#3182CE' }]}>Fiber</Text>
+              </View>
+              <View style={styles.macroInputRow}>
+                <TextInput
+                  style={styles.macroInput}
+                  value={fiber}
+                  onChangeText={setFiber}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.unitLabel}>g</Text>
+              </View>
+            </View>
+
+            <View style={[styles.macroItem, styles.sugarBg]}>
+              <View style={styles.macroHeader}>
+                <View style={styles.sugarDot} />
+                <Text style={[styles.macroLabel, { color: '#805AD5' }]}>Sugar</Text>
+              </View>
+              <View style={styles.macroInputRow}>
+                <TextInput
+                  style={styles.macroInput}
+                  value={sugar}
+                  onChangeText={setSugar}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.unitLabel}>g</Text>
+              </View>
+            </View>
+
+            <View style={[styles.macroItem, styles.addedSugarBg]}>
+              <View style={styles.macroHeader}>
+                <View style={styles.addedSugarDot} />
+                <Text style={[styles.macroLabel, { color: '#B83280' }]}>Added Sugar</Text>
+              </View>
+              <View style={styles.macroInputRow}>
+                <TextInput
+                  style={styles.macroInput}
+                  value={addedSugar}
+                  onChangeText={setAddedSugar}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.unitLabel}>g</Text>
+              </View>
+            </View>
+
+            <View style={[styles.macroItem, styles.calciumBg]}>
+              <View style={styles.macroHeader}>
+                <View style={styles.calciumDot} />
+                <Text style={[styles.macroLabel, { color: '#2F855A' }]}>Calcium</Text>
+              </View>
+              <View style={styles.macroInputRow}>
+                <TextInput
+                  style={styles.macroInput}
+                  value={calcium}
+                  onChangeText={setCalcium}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.unitLabel}>mg</Text>
+              </View>
+            </View>
+
+            <View style={[styles.macroItem, styles.sodiumBg]}>
+              <View style={styles.macroHeader}>
+                <View style={styles.sodiumDot} />
+                <Text style={[styles.macroLabel, { color: '#C05621' }]}>Sodium</Text>
+              </View>
+              <View style={styles.macroInputRow}>
+                <TextInput
+                  style={styles.macroInput}
+                  value={sodium}
+                  onChangeText={setSodium}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.unitLabel}>mg</Text>
+              </View>
+            </View>
           </View>
 
           {/* Bottom Button */}
           <View style={styles.footer}>
             <Button
-              title={isLogging ? "Logging..." : "Log Food"}
+              title={isLogging ? "Logging..." : (isFetchingServings ? "Loading Details..." : "Log Food")}
               onPress={handleLogFood}
-              disabled={isLogging}
+              disabled={isLogging || isFetchingServings}
             />
           </View>
         </ScrollView>
@@ -299,6 +518,35 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#EDF2F7',
   },
+  servingsScroll: {
+    marginBottom: 16,
+    marginHorizontal: -24,
+  },
+  servingsScrollContent: {
+    paddingHorizontal: 24,
+    gap: 8,
+  },
+  servingPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#F7FAFC',
+    borderWidth: 1,
+    borderColor: '#EDF2F7',
+  },
+  servingPillActive: {
+    backgroundColor: '#E6FFFA',
+    borderColor: '#38B2AC',
+  },
+  servingPillText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#4A5568',
+  },
+  servingPillTextActive: {
+    color: '#2C7A7B',
+    fontWeight: '600',
+  },
   caloriesCard: {
     backgroundColor: '#F7FAFC',
     borderRadius: 24,
@@ -351,12 +599,12 @@ const styles = StyleSheet.create({
   },
   macrosGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
     marginBottom: 40,
   },
   macroItem: {
-    flex: 1,
-    marginHorizontal: 4,
+    width: '31%',
     borderRadius: 20,
     padding: 16,
     borderWidth: 1,
@@ -392,6 +640,41 @@ const styles = StyleSheet.create({
   proteinBg: { backgroundColor: '#FFF5F5' },
   carbsBg: { backgroundColor: '#FFFBEB' },
   fatsBg: { backgroundColor: '#E6FFFA' },
+  fiberBg: { backgroundColor: '#EBF8FF' },
+  sugarBg: { backgroundColor: '#FAF5FF' },
+  addedSugarBg: { backgroundColor: '#FFF5F7' },
+  calciumBg: { backgroundColor: '#F0FFF4' },
+  sodiumBg: { backgroundColor: '#FFFAF0' },
+  fiberDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#3182CE',
+  },
+  sugarDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#805AD5',
+  },
+  addedSugarDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#B83280',
+  },
+  calciumDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#2F855A',
+  },
+  sodiumDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#C05621',
+  },
   footer: {
     marginTop: 10,
   },

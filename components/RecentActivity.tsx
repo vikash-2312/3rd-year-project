@@ -1,7 +1,7 @@
 import { Activity01Icon, FireIcon, Timer02Icon, OrganicFoodIcon, Delete02Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../lib/ThemeContext';
 
@@ -25,9 +25,19 @@ type RecentActivityProps = {
   activities?: ActivityItem[];
   onDelete?: (id: string, name: string) => void;
   isToday?: boolean;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void;
 };
 
-export const RecentActivity = React.memo(({ activities = [], onDelete, isToday = false }: RecentActivityProps) => {
+export const RecentActivity = React.memo(({ 
+  activities = [], 
+  onDelete, 
+  isToday = false,
+  hasMore = false,
+  isLoadingMore = false,
+  onLoadMore
+}: RecentActivityProps) => {
   const isEmpty = activities.length === 0;
   const { colors, isDark } = useTheme();
 
@@ -162,6 +172,24 @@ export const RecentActivity = React.memo(({ activities = [], onDelete, isToday =
           );
         })
       )}
+
+      {hasMore && (
+        <TouchableOpacity 
+          style={[styles.loadMoreButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={onLoadMore}
+          disabled={isLoadingMore}
+          activeOpacity={0.7}
+        >
+          {isLoadingMore ? (
+            <ActivityIndicator size="small" color={colors.accent} />
+          ) : (
+            <>
+              <Text style={[styles.loadMoreText, { color: colors.accent }]}>Load More Activities</Text>
+              <HugeiconsIcon icon={Timer02Icon} size={16} color={colors.accent} />
+            </>
+          )}
+        </TouchableOpacity>
+      )}
     </View>
   );
 });
@@ -169,7 +197,7 @@ export const RecentActivity = React.memo(({ activities = [], onDelete, isToday =
 const styles = StyleSheet.create({
   container: {
     marginHorizontal: 24,
-    marginTop: 24,
+    marginTop: 10,
   },
   headerRow: {
     flexDirection: 'row',
@@ -427,5 +455,28 @@ const styles = StyleSheet.create({
   },
   deleteButtonSmall: {
     padding: 2,
+  },
+  loadMoreButton: {
+    marginTop: 8,
+    marginHorizontal: 24,
+    marginBottom: 100, // Safety margin for the floating FAB
+    height: 56,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  loadMoreText: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 });

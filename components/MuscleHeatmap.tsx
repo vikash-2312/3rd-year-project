@@ -34,7 +34,7 @@ export const MuscleHeatmap: React.FC<MuscleHeatmapProps> = ({ activeMuscles, tit
         {/* Front View */}
         <View style={styles.bodyColumn}>
           <Text style={styles.bodyLabel}>FRONT</Text>
-          <Svg width="120" height="200" viewBox="0 0 100 180">
+          <Svg width="100" height="160" viewBox="0 0 100 180">
             {/* Silhouette Outline */}
             <Path
               d="M50 10c-5 0-9 4-9 9s4 9 9 9 9-4 9-9-4-9-9-9zM35 30h30c4 0 7 3 7 7v40c0 4-3 7-7 7H35c-4 0-7-3-7-7V37c0-4 3-7 7-7zM25 40l-8 50c-1 5 3 10 8 10h5s5-5 5-10l8-50h-18zm55 0l8 50c1 5-3 10-8 10h-5s-5-5-5-10l-8-50h18zM35 90l-5 70c-1 8 5 15 13 15h2s7-7 7-15l-3-70h-14zm30 0l5 70c1 8-5 15-13 15h-2s-7-7-7-15l3-70h14z"
@@ -62,7 +62,7 @@ export const MuscleHeatmap: React.FC<MuscleHeatmapProps> = ({ activeMuscles, tit
         {/* Back View */}
         <View style={styles.bodyColumn}>
           <Text style={styles.bodyLabel}>BACK</Text>
-          <Svg width="120" height="200" viewBox="0 0 100 180">
+          <Svg width="100" height="160" viewBox="0 0 100 180">
              <Path
               d="M50 10c-5 0-9 4-9 9s4 9 9 9 9-4 9-9-4-9-9-9zM35 30h30c4 0 7 3 7 7v40c0 4-3 7-7 7H35c-4 0-7-3-7-7V37c0-4 3-7 7-7zM25 40l-8 50c-1 5 3 10 8 10h5s5-5 5-10l8-50h-18zm55 0l8 50c1 5-3 10-8 10h-5s-5-5-5-10l-8-50h18zM35 90l-5 70c-1 8 5 15 13 15h2s7-7 7-15l-3-70h-14zm30 0l5 70c1 8-5 15-13 15h-2s-7-7-7-15l3-70h14z"
               fill="#F7FAFC"
@@ -109,8 +109,8 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: '#FFF',
     borderRadius: 24,
-    padding: 20,
-    marginBottom: 24,
+    padding: 16,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: '#EDF2F7',
     shadowColor: '#000',
@@ -123,7 +123,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 20,
+    marginBottom: 12,
   },
   title: {
     fontSize: 14,
@@ -176,8 +176,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   footer: {
-    marginTop: 20,
-    paddingTop: 16,
+    marginTop: 12,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#F7FAFC',
     alignItems: 'center',

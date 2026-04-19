@@ -12,6 +12,7 @@ import { StreakModal } from './StreakModal';
 import Animated, { FadeInRight, FadeInDown } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 import { Activity01Icon, StarsIcon } from '@hugeicons/core-free-icons';
+import { typography } from '../lib/typography';
 
 interface HomeHeaderProps {
   userData?: any;
@@ -19,6 +20,7 @@ interface HomeHeaderProps {
   scoreColor?: string;
   pulseStyle?: any;
   onScorePress?: () => void;
+  onSharePress?: () => void; // Added missing prop
 }
 
 export function HomeHeader({ 
@@ -26,7 +28,8 @@ export function HomeHeader({
   healthScore = 0, 
   scoreColor = '#009050', 
   pulseStyle = {}, 
-  onScorePress = () => {} 
+  onScorePress = () => {},
+  onSharePress = () => {}
 }: HomeHeaderProps) {
   const { user } = useUser();
   const router = useRouter();
@@ -178,7 +181,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 24,
     paddingTop: 16,
-    paddingBottom: 8,
+    paddingBottom: 4,
   },
   profileSection: {
     flexDirection: 'row',
@@ -226,8 +229,8 @@ const styles = StyleSheet.create({
   },
   miniScoreText: {
     color: '#FFF',
-    fontSize: 10,
-    fontWeight: '900',
+    ...typography.captionBold,
+    fontSize: 10, // Slight override for tiny pill
   },
   avatarText: {
     color: '#FFFFFF',
@@ -238,14 +241,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   welcomeText: {
-    fontSize: 12,
-    fontWeight: '600',
+    ...typography.label,
+    color: '#718096', // Fallback color
     marginBottom: 0,
   },
   nameText: {
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: -0.5,
+    ...typography.heading2,
+    fontSize: 22, // Layout specific tweak
   },
   actionsSection: {
     flexDirection: 'row',
@@ -288,7 +290,6 @@ const styles = StyleSheet.create({
     height: 18,
   },
   streakCountText: {
-    fontSize: 15,
-    fontWeight: '900',
+    ...typography.button,
   },
 });

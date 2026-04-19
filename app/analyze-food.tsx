@@ -1,15 +1,17 @@
 import { ArrowLeft01Icon, CheckmarkCircle01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Sharing from 'expo-sharing';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, StyleSheet, Text, TouchableOpacity, View, Modal, Dimensions } from 'react-native';
+import { ActivityIndicator, Alert, Image, StyleSheet, Text, TouchableOpacity, View, Modal, Dimensions, ScrollView } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import ViewShot from 'react-native-view-shot';
 import { Button } from '../components/Button';
 import { FoodScanStoryTemplate } from '../components/progress/FoodScanStoryTemplate';
-import ViewShot from 'react-native-view-shot';
-import * as Sharing from 'expo-sharing';
-import * as Haptics from 'expo-haptics';
+import { ScanOverlay } from '../components/ScanOverlay';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -194,54 +196,57 @@ Return ONLY valid JSON:
           <Text style={styles.headerTitle}>Analyzing Food</Text>
         </View>
 
-        {/* Image Preview */}
-        <View style={styles.imageContainer}>
-          {imageUri ? (
-            <Image
-              source={{ uri: decodeURIComponent(imageUri) }}
-              style={styles.image}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.imagePlaceholder}>
-              <Text style={styles.imagePlaceholderText}>No Image Selected</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Loading Steps */}
-        <View style={styles.stepsContainer}>
-          {steps.map((stepText, index) => {
-            const isCompleted = step > index;
-            const isActive = step === index;
-
-            return (
-              <View key={index} style={styles.stepRow}>
-                <View style={styles.iconContainer}>
-                  {isCompleted ? (
-                    <HugeiconsIcon icon={CheckmarkCircle01Icon} size={24} color="#009050" />
-                  ) : isActive ? (
-                    <ActivityIndicator size="small" color="#3182CE" />
-                  ) : (
-                    <View style={styles.pendingCircle} />
-                  )}
-                </View>
-                <Text style={[
-                  styles.stepText,
-                  isCompleted && styles.stepCompletedText,
-                  isActive && styles.stepActiveText
-                ]}>
-                  {stepText}
-                </Text>
+        <ScrollView 
+          style={styles.scrollContent} 
+          contentContainerStyle={styles.scrollContentContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Image Preview */}
+          <View style={styles.imageContainer}>
+            {imageUri ? (
+              <View style={{ flex: 1 }}>
+                <Image
+                  source={{ uri: decodeURIComponent(imageUri) }}
+                  style={styles.image}
+                  resizeMode="cover"
+                />
+                <ScanOverlay
+                  visible={step < 3}
+                  width={SCREEN_WIDTH - 48}
+                  height={SCREEN_WIDTH - 48}
+                />
               </View>
-            );
-          })}
-        </View>
+            ) : (
+              <View style={styles.imagePlaceholder}>
+                <Text style={styles.imagePlaceholderText}>No Image Selected</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Result Breakdown (Only show after step 3) */}
+          {step === 3 && aiResult && (
+            <Animated.View entering={FadeInDown.duration(800)} style={styles.resultDetails}>
+              <View style={styles.resultHeader}>
+                <HugeiconsIcon icon={CheckmarkCircle01Icon} size={28} color="#009050" />
+                <Text style={styles.resultTitle}>BIO-SCAN COMPLETE</Text>
+              </View>
+              <Text style={styles.foodNameDisplay}>{aiResult.foodName}</Text>
+              <View style={styles.macroStrip}>
+                <MacroBadge label="KCAL" value={aiResult.calories} color="#FFAB00" />
+                <MacroBadge label="PROT" value={aiResult.protein} color="#FF5252" />
+                <MacroBadge label="CARB" value={aiResult.carbs} color="#60A5FA" />
+                <MacroBadge label="FAT" value={aiResult.fat} color="#A78BFA" />
+              </View>
+            </Animated.View>
+          )}
+          
+          <View style={{ height: 24 }} />
+        </ScrollView>
 
         {/* Footer */}
         <View style={styles.footer}>
           {step === 3 && (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.shareAnalysisButton}
               onPress={handleShareAnalysis}
             >
@@ -281,15 +286,15 @@ Return ONLY valid JSON:
               <View style={styles.previewHeader}>
                 <Text style={styles.previewHeaderTitle}>AI Scan Reveal</Text>
                 <TouchableOpacity onPress={() => setIsPreviewVisible(false)}>
-                   <Text style={styles.cancelText}>Cancel</Text>
+                  <Text style={styles.cancelText}>Cancel</Text>
                 </TouchableOpacity>
               </View>
 
               <View style={styles.previewTemplateContainer}>
-                <View 
-                  style={{ 
-                    width: 1080, 
-                    height: 1920, 
+                <View
+                  style={{
+                    width: 1080,
+                    height: 1920,
                     transform: [
                       { scale: (SCREEN_WIDTH * 0.75) / 1080 },
                     ],
@@ -334,7 +339,7 @@ Return ONLY valid JSON:
         {/* Hidden high-res capture view */}
         <View style={styles.hiddenViewShot}>
           {aiResult && imageUri && (
-             <ViewShot
+            <ViewShot
               ref={storyViewShotRef}
               options={{ format: 'jpg', quality: 0.9 }}
               style={{ width: 1080, height: 1920 }}
@@ -410,50 +415,17 @@ const styles = StyleSheet.create({
     color: '#A0AEC0',
     fontSize: 16,
   },
-  stepsContainer: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 24,
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2,
+  scrollContent: {
+    flex: 1,
   },
-  stepRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  iconContainer: {
-    width: 30,
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  pendingCircle: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#E2E8F0',
-  },
-  stepText: {
-    fontSize: 16,
-    color: '#A0AEC0',
-    fontWeight: '500',
-  },
-  stepActiveText: {
-    color: '#2D3748',
-    fontWeight: '700',
-  },
-  stepCompletedText: {
-    color: '#009050',
-    fontWeight: '600',
+  scrollContentContainer: {
+    paddingBottom: 24,
   },
   footer: {
-    flex: 1,
-    justifyContent: 'flex-end',
     padding: 24,
+    backgroundColor: '#F7FAFC',
+    borderTopWidth: 1,
+    borderTopColor: '#EDF2F7',
   },
   continueButton: {
     width: '100%',
@@ -465,12 +437,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
     borderWidth: 2,
-    borderColor: '#3182CE',
+    borderColor: '#009050',
     borderStyle: 'dashed',
-    backgroundColor: '#EBF8FF',
+    backgroundColor: '#F0FFF4',
   },
   shareAnalysisText: {
-    color: '#3182CE',
+    color: '#009050',
     fontWeight: '800',
     fontSize: 15,
   },
@@ -527,7 +499,7 @@ const styles = StyleSheet.create({
   },
   confirmShareButton: {
     width: '100%',
-    backgroundColor: '#22D3EE',
+    backgroundColor: '#009050',
     paddingVertical: 16,
     borderRadius: 18,
     alignItems: 'center',
@@ -562,4 +534,65 @@ const styles = StyleSheet.create({
     top: 0,
     opacity: 0,
   },
+  resultDetails: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 24,
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  resultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  resultTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#009050',
+    letterSpacing: 1.5,
+  },
+  foodNameDisplay: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1A202C',
+    marginBottom: 20,
+    textTransform: 'capitalize',
+  },
+  macroStrip: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  macroBadge: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  macroLabel: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: 'rgba(0,0,0,0.4)',
+    marginBottom: 4,
+  },
+  macroValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#000',
+  }
 });
+
+const MacroBadge = ({ label, value, color }: any) => (
+  <View style={[styles.macroBadge, { backgroundColor: color + '15' }]}>
+    <Text style={styles.macroLabel}>{label}</Text>
+    <Text style={styles.macroValue}>{value}</Text>
+  </View>
+);

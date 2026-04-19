@@ -38,31 +38,31 @@ export const LightColors = {
 export type ThemeColors = typeof LightColors;
 
 export const DarkColors: ThemeColors = {
-  background: '#0F1117',
-  card: '#1A1D27',
-  cardAlt: '#22262F',
-  text: '#E2E8F0',
-  textSecondary: '#CBD5E0',
-  textTertiary: '#A0AEC0',
-  textMuted: '#718096',
-  border: '#2D3748',
-  accent: '#38A169',
-  accentLight: '#1C3829',
-  danger: '#FC8181',
-  dangerLight: '#3B1A1A',
-  warning: '#ECC94B',
-  blue: '#63B3ED',
-  blueLight: '#1A2A3B',
-  purple: '#B794F4',
-  purpleLight: '#2D1F4E',
-  purpleBorder: '#553C9A',
-  purpleText: '#E9D8FD',
-  purpleSubtext: '#D6BCFA',
-  modalOverlay: 'rgba(0, 0, 0, 0.7)',
-  tabBar: '#1A1D27',
-  chartBg: '#1A1D27',
-  switchTrack: '#2D3748',
-  inputBg: '#22262F',
+  background: '#090C12', // Deeper, more expansive navy
+  card: '#12161F',       // Sleek surface
+  cardAlt: '#1A1F2B',    // Highlighted elevation
+  text: '#F8FAFC',       // High contrast text
+  textSecondary: '#CBD5E1',
+  textTertiary: '#94A3B8',
+  textMuted: '#64748B',
+  border: '#1E293B',     // More defined borders
+  accent: '#00DC82',     // Neon Mint (Vibrant & High Performance)
+  accentLight: '#0A2D1F', // Deep glow background
+  danger: '#FF4D4C',     // Vibrant "Apex" Red
+  dangerLight: '#2D1616',
+  warning: '#FBBF24',    // Bright Amber
+  blue: '#3B82F6',       // Electric Blue
+  blueLight: '#0F1E35',
+  purple: '#A855F7',
+  purpleLight: '#2D1B4E',
+  purpleBorder: '#6B21A8',
+  purpleText: '#F3E8FF',
+  purpleSubtext: '#D8B4FE',
+  modalOverlay: 'rgba(0, 0, 0, 0.8)',
+  tabBar: '#12161F',
+  chartBg: '#12161F',
+  switchTrack: '#1E293B',
+  inputBg: '#1A1F2B',
   statusBar: 'light' as 'dark' | 'light',
 };
 
@@ -94,18 +94,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<ThemeType>('light');
 
   useEffect(() => {
-    if (!user) return;
+    if (user?.id) {
+      const settingsRef = doc(db, 'users', user.id, 'settings', 'preferences');
+      const unsubscribe = onSnapshot(settingsRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const newTheme = snapshot.data().theme || 'system';
+          setTheme(prev => prev !== newTheme ? newTheme : prev);
+        }
+      });
 
-    const settingsRef = doc(db, 'users', user.id, 'settings', 'preferences');
-    const unsubscribe = onSnapshot(settingsRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        setTheme(data.theme || 'light');
-      }
-    });
-
-    return () => unsubscribe();
-  }, [user]);
+      return () => unsubscribe();
+    } else {
+      setTheme(prev => prev !== 'system' ? 'system' : prev);
+    }
+  }, [user?.id]);
 
   const isDark =
     theme === 'dark' || (theme === 'system' && systemScheme === 'dark');

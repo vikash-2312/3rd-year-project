@@ -25,7 +25,8 @@
         "android.permission.health.READ_DISTANCE",
         "android.permission.health.READ_SLEEP",
         "android.permission.health.READ_HEART_RATE",
-        "android.permission.health.READ_EXERCISE"
+        "android.permission.health.READ_EXERCISE",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -68,8 +69,8 @@
           "android": {
             "minSdkVersion": 26,
             "compileSdkVersion": 36,
-            "targetSdkVersion": 36,
-            "kotlinVersion": "2.1.21"
+            "targetSdkVersion": 35,
+            "kotlinVersion": "2.1.0"
           }
         }
       ],
@@ -82,7 +83,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "73706a6d-3c3f-4e5c-a9be-e3d24cf8730d"
+        "projectId": "9271ef95-966b-4b7b-b478-eab56511946c"
       }
     }
   }

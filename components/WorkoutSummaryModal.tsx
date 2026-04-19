@@ -5,8 +5,10 @@ import {
   StyleSheet, 
   Modal, 
   TouchableOpacity, 
-  Dimensions 
+  Dimensions,
+  TextInput 
 } from 'react-native';
+import Animated, { FadeInDown, FadeInUp, useSharedValue, useAnimatedStyle, withTiming, withDelay } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { 
@@ -17,8 +19,47 @@ import {
 } from '@hugeicons/core-free-icons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+import { WorkoutShareCard } from './WorkoutShareCard';
 
 const { width } = Dimensions.get('window');
+
+const AnimatedCounter = ({ value, label, delay = 0 }: { value: number, label: string, delay?: number }) => {
+  const [displayValue, setDisplayValue] = React.useState(0);
+
+  React.useEffect(() => {
+    let start = 0;
+    const end = value;
+    const duration = 1500;
+    const increment = end / (duration / 16);
+    
+    let timer: any;
+    const timeout = setTimeout(() => {
+      timer = setInterval(() => {
+        start += increment;
+        if (start >= end) {
+          setDisplayValue(end);
+          clearInterval(timer);
+        } else {
+          setDisplayValue(Math.floor(start));
+        }
+      }, 16);
+    }, delay);
+
+    return () => {
+      clearTimeout(timeout);
+      if (timer) clearInterval(timer);
+    };
+  }, [value, delay]);
+
+  return (
+    <Animated.View entering={FadeInUp.delay(delay).duration(800)} style={styles.statBox}>
+      <Text style={styles.statValue}>{displayValue.toLocaleString()}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </Animated.View>
+  );
+};
 
 interface WorkoutSummaryModalProps {
   isVisible: boolean;
@@ -28,14 +69,56 @@ interface WorkoutSummaryModalProps {
     totalReps: number;
     workoutTitle: string;
   };
+  activeMuscles?: string[];
+  onSaveRoutine?: (title: string) => Promise<void>;
+  isAlreadySaved?: boolean;
 }
 
 export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({ 
   isVisible, 
   onClose, 
-  stats 
+  stats,
+  activeMuscles = [],
+  onSaveRoutine,
+  isAlreadySaved = false
 }) => {
+  const [routineName, setRoutineName] = React.useState('');
+  const [hasSaved, setHasSaved] = React.useState(false);
+  const [isSharing, setIsSharing] = React.useState(false);
+  const viewShotRef = React.useRef(null);
+
   if (!stats) return null;
+
+  const handleShare = async () => {
+    try {
+      setIsSharing(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      
+      const uri = await captureRef(viewShotRef, {
+        format: 'png',
+        quality: 1.0,
+      });
+
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: 'Share your Elite Workout',
+        UTI: 'public.png',
+      });
+    } catch (error) {
+      console.error('Sharing failed:', error);
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (hasSaved) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (onSaveRoutine) {
+      await onSaveRoutine(routineName || stats.workoutTitle);
+      setHasSaved(true);
+    }
+  };
 
   return (
     <Modal
@@ -49,39 +132,42 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
             colors={['#009050', '#006B3C']}
             style={styles.card}
           >
-            <View style={styles.trophyContainer}>
-              <HugeiconsIcon icon={ChampionIcon} size={64} color="#FFD700" />
-            </View>
+            <Animated.View entering={FadeInDown.delay(200)} style={styles.trophyContainer}>
+              <HugeiconsIcon icon={ChampionIcon} size={72} color="#FFD700" />
+            </Animated.View>
 
-            <Text style={styles.title}>Elite Session Complete!</Text>
-            <Text style={styles.workoutName}>{stats.workoutTitle}</Text>
+            <Animated.Text entering={FadeInDown.delay(400)} style={styles.title}>MISSION ACCOMPLISHED</Animated.Text>
+            <Animated.Text entering={FadeInDown.delay(500)} style={styles.workoutName}>{stats.workoutTitle.toUpperCase()}</Animated.Text>
 
             <View style={styles.statsGrid}>
-              <View style={styles.statBox}>
-                <HugeiconsIcon icon={FlashIcon} size={24} color="#FFF" />
-                <Text style={styles.statValue}>{stats.totalVolume.toLocaleString()}</Text>
-                <Text style={styles.statLabel}>Total Vol (kg)</Text>
-              </View>
-
+              <AnimatedCounter value={stats.totalVolume} label="Volume (KG)" delay={600} />
               <View style={styles.statLine} />
-
-              <View style={styles.statBox}>
-                <HugeiconsIcon icon={ChampionIcon} size={24} color="#FFF" />
-                <Text style={styles.statValue}>{stats.totalReps}</Text>
-                <Text style={styles.statLabel}>Total Reps</Text>
-              </View>
+              <AnimatedCounter value={stats.totalReps} label="Reps Logged" delay={800} />
             </View>
 
-            <View style={styles.badgeRow}>
-              <View style={styles.badge}>
-                <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} color="#009050" />
-                <Text style={styles.badgeText}>PR Logged</Text>
+            {onSaveRoutine && !isAlreadySaved && (
+              <View style={styles.saveSection}>
+                {!hasSaved ? (
+                  <>
+                    <TextInput
+                      style={styles.saveInput}
+                      placeholder="Name this routine (e.g. Chest Blast)"
+                      placeholderTextColor="rgba(255,255,255,0.5)"
+                      value={routineName}
+                      onChangeText={setRoutineName}
+                    />
+                    <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+                       <Text style={styles.saveBtnText}>Save to Favorites</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <View style={styles.savedOverlay}>
+                     <HugeiconsIcon icon={CheckmarkCircle02Icon} size={20} color="#FFF" />
+                     <Text style={styles.savedText}>Saved to Favorites!</Text>
+                  </View>
+                )}
               </View>
-              <View style={styles.badge}>
-                <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} color="#009050" />
-                <Text style={styles.badgeText}>Clean Form</Text>
-              </View>
-            </View>
+            )}
 
             <TouchableOpacity 
               style={styles.doneBtn} 
@@ -93,11 +179,24 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
               <Text style={styles.doneBtnText}>Return to Dashboard</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.shareBtn}>
+            <TouchableOpacity 
+              style={[styles.shareBtn, isSharing && { opacity: 0.5 }]} 
+              onPress={handleShare}
+              disabled={isSharing}
+            >
               <HugeiconsIcon icon={Share02Icon} size={18} color="rgba(255,255,255,0.7)" />
-              <Text style={styles.shareBtnText}>Share Story</Text>
+              <Text style={styles.shareBtnText}>
+                {isSharing ? "Generating..." : "Share Story"}
+              </Text>
             </TouchableOpacity>
           </LinearGradient>
+        </View>
+
+        {/* Hidden Share Card for Capture */}
+        <View style={styles.hiddenCardContainer} pointerEvents="none">
+          <View ref={viewShotRef} collapsable={false}>
+            <WorkoutShareCard stats={stats} activeMuscles={activeMuscles} />
+          </View>
         </View>
       </BlurView>
     </Modal>
@@ -209,4 +308,52 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: 'rgba(255,255,255,0.7)',
   },
+  saveSection: {
+    width: '100%',
+    marginBottom: 24,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  saveInput: {
+    fontSize: 14,
+    color: '#FFF',
+    fontWeight: '600',
+    marginBottom: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.2)',
+  },
+  saveBtn: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  saveBtnText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  savedOverlay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+  },
+  savedText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  hiddenCardContainer: {
+    position: 'absolute',
+    top: -9999, // Render far off-screen
+    left: -9999,
+    width: width,
+    zIndex: -1,
+  }
 });

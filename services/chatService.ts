@@ -6,7 +6,7 @@
  */
 
 import { format } from 'date-fns';
-import { addDoc, collection, doc, setDoc, getDoc, serverTimestamp, deleteDoc, query, where, getDocs, limit } from 'firebase/firestore';
+import { addDoc, collection, doc, setDoc, getDoc, updateDoc, serverTimestamp, deleteDoc, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { sendToGemini, sendToGeminiStreaming, AIResponse, AIAction, ChatMessage, UserContext } from './aiService';
 import { getMemory, updateMemory } from './memoryService';
@@ -16,7 +16,20 @@ import { adjustPlan } from './adjustmentEngine';
 
 export interface ProcessedResult {
   aiMessage: ChatMessage;
-  actionStatus?: string; // Human-readable confirmation string
+  actionStatus?: string; 
+  actionMetadata?: {
+    id?: string;
+    type?: string;
+    status: string;
+    data?: any;
+  }[];
+}
+
+interface ActionExecutionResult {
+  status: string;
+  id?: string;
+  type?: string;
+  data?: any;
 }
 
 // --- Main Entry Point ---
@@ -74,40 +87,64 @@ export async function processMessage(
   };
 
   // 3. Call Gemini
-  const aiResponse = await sendToGemini(userMessage, context, imageBase64, intelligenceMode);
+  let aiResponse = await sendToGemini(userMessage, context, imageBase64, intelligenceMode);
+
+  // 3b. Agentic Search Hook (Non-Streaming Sync)
+  const searchAction = aiResponse.actions?.find(a => a.type === 'search_food');
+  if (searchAction) {
+    try {
+      const { searchFoods } = await import('../lib/fatsecret');
+      const results = await searchFoods(searchAction.data.query);
+      const searchContext = results.length > 0 
+        ? `SEARCH RESULTS: ${JSON.stringify(results)}`
+        : `No exact matches found for "${searchAction.data.query}".`;
+
+      aiResponse = await sendToGemini(
+        `${userMessage}\n\n[SYSTEM DATA]: ${searchContext}`, 
+        context, 
+        imageBase64, 
+        intelligenceMode
+      );
+    } catch (err) {
+      console.error('[ChatService] Sync search failed:', err);
+    }
+  }
 
   // 4. Execute actions if present
   let actionStatus: string | undefined;
+  const actionMetadata: any[] = [];
   if (aiResponse.actions && aiResponse.actions.length > 0) {
-    const statusResults = await Promise.all(
-      aiResponse.actions.map((action) => executeAction(action, userData.userId))
+    const visibleActions = aiResponse.actions.filter(a => a.type !== 'search_food');
+    const results = await Promise.all(
+      visibleActions.map((action) => executeAction(action, userData.userId))
     );
-    // Filter out empty strings and join with a clear separator
-    actionStatus = statusResults.filter(Boolean).join(' | ');
+    actionStatus = results.map(r => r.status).filter(Boolean).join(' | ');
+    results.forEach(r => {
+      if (r.id) actionMetadata.push({ id: r.id, type: r.type, status: r.status, data: r.data });
+    });
   }
 
   // 5. Save memory update if present
   if (aiResponse.memory_update) {
     await updateMemory(userData.userId, aiResponse.memory_update);
-    if (!actionStatus) {
-      actionStatus = '🧠 Preferences saved';
-    }
+    if (!actionStatus) actionStatus = '🧠 Preferences saved';
   }
 
-  // 6. Build and return the AI chat message
+  // 6. Build and return the AI message
   const aiMessage: ChatMessage = {
     id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     role: 'ai',
     content: aiResponse.response,
     timestamp: Date.now(),
-    actionStatus,
+    actionStatus: actionStatus || null,
+    actionMetadata: actionMetadata.length > 0 ? actionMetadata : null,
     quickActions: aiResponse.quick_actions?.map((qa) => ({
       label: qa.label,
       message: qa.message,
-    })),
+    })) || null,
   };
 
-  return { aiMessage, actionStatus };
+  return { aiMessage, actionStatus, actionMetadata };
 }
 
 /**
@@ -157,8 +194,8 @@ export async function processMessageStreaming(
     historicalLogs: (userData as any).historicalLogs,
   };
 
-  // Call Streaming version of Gemini
-  const aiResponse = await sendToGeminiStreaming(
+  // 1. Initial AI Call
+  let aiResponse = await sendToGeminiStreaming(
     userMessage, 
     context, 
     yieldText, 
@@ -166,13 +203,53 @@ export async function processMessageStreaming(
     intelligenceMode
   );
 
-  // Execute actions (same as standard)
+  // 2. Check for Agentic Search Action
+  const searchAction = aiResponse.actions?.find(a => a.type === 'search_food');
+  const isSearchLoop = userMessage.includes('[SYSTEM DATA]: SEARCH RESULTS');
+
+  if (searchAction && !isSearchLoop) {
+    const queryStr = searchAction.data.query;
+    yieldText('\n\n*Searching nutrition database...* 🔍');
+    
+    try {
+      const { searchFoods } = await import('../lib/fatsecret');
+      const results = await searchFoods(queryStr);
+      
+      const searchContext = results.length > 0 
+        ? `SEARCH RESULTS for "${queryStr}":\n${results.map(r => 
+            `- ${r.food_name} (${r.brand_name || 'Generic'}): ${r.calories} kcal, ${r.protein}g P, ${r.carbs}g C, ${r.fat}g F (${r.serving})`
+          ).join('\n')}\n\nINSTRUCTION: Now give the user a helpful response based on these real facts. Format as a table if appropriate.`
+        : `SEARCH RESULTS for "${queryStr}": No exact matches found. Inform the user and provide your best estimate based on generic data.`;
+
+      // Recursive call with search data injected as a system correction
+      aiResponse = await sendToGeminiStreaming(
+        `${userMessage}\n\n[SYSTEM DATA]: ${searchContext}`, 
+        context, 
+        yieldText, 
+        imageBase64, 
+        intelligenceMode
+      );
+    } catch (err) {
+      console.error('[ChatService] Search failed:', err);
+    }
+  }
+
+  // 3. Execute actions (same as standard)
   let actionStatus: string | undefined;
+  const actionMetadata: any[] = [];
+  
   if (aiResponse.actions && aiResponse.actions.length > 0) {
-    const statusResults = await Promise.all(
-      aiResponse.actions.map((action) => executeAction(action, userData.userId))
+    // Filter out the internal 'search_food' from final metadata display
+    const visibleActions = aiResponse.actions.filter(a => a.type !== 'search_food');
+    
+    const results = await Promise.all(
+      visibleActions.map((action) => executeAction(action, userData.userId))
     );
-    actionStatus = statusResults.filter(Boolean).join(' | ');
+    
+    actionStatus = results.map(r => r.status).filter(Boolean).join(' | ');
+    results.forEach(r => {
+      if (r.id) actionMetadata.push({ id: r.id, type: r.type, status: r.status, data: r.data });
+    });
   }
 
   if (aiResponse.memory_update) {
@@ -185,14 +262,15 @@ export async function processMessageStreaming(
     role: 'ai',
     content: aiResponse.response,
     timestamp: Date.now(),
-    actionStatus,
+    actionStatus: actionStatus || null,
+    actionMetadata: actionMetadata && actionMetadata.length > 0 ? actionMetadata : null,
     quickActions: aiResponse.quick_actions?.map((qa) => ({
       label: qa.label,
       message: qa.message,
-    })),
+    })) || null,
   };
 
-  return { aiMessage, actionStatus };
+  return { aiMessage, actionStatus, actionMetadata };
 }
 
 // --- Action Engine ---
@@ -201,7 +279,7 @@ export async function processMessageStreaming(
  * Executes an AI-returned action against the app's data layer.
  * Returns a human-readable status string for the UI.
  */
-async function executeAction(action: AIAction, userId: string): Promise<string> {
+async function executeAction(action: AIAction, userId: string): Promise<ActionExecutionResult> {
   console.log('[ChatService] Executing action:', action.type, action.data);
 
   try {
@@ -209,190 +287,233 @@ async function executeAction(action: AIAction, userId: string): Promise<string> 
       case 'update_calories': {
         const { value, adjustment, reason } = action.data;
 
-        // Fetch current baseline macros
         const userRef = doc(db, 'users', userId);
         const userSnap = await getDoc(userRef);
-        const profile = userSnap.exists() ? userSnap.data()?.profile : null;
+        const userData = userSnap.exists() ? userSnap.data() : null;
+        const profile = userData?.profile;
 
-        if (!profile || !profile.macros) {
-          return '⚠️ Adjustment failed: Baseline plan not found.';
+        if (!userData || !profile || !profile.macros) {
+          return { status: '⚠️ Adjustment failed: Baseline plan not found.' };
         }
+        
+        const oldCalories = userData.dailyCalories || 2000;
+        const oldMacros = { ...profile.macros };
 
-        let nextMacros;
+        let calorieChange = 0;
         let deltaStr = '';
+        let nextMacros;
 
         if (typeof adjustment === 'number') {
-          // Perform relative adjustment via engine
-          nextMacros = adjustPlan(profile.macros, {
-            type: 'manual',
-            value: adjustment,
-          });
+          calorieChange = adjustment;
           deltaStr = `${adjustment > 0 ? '+' : ''}${adjustment} kcal`;
+          nextMacros = adjustPlan(profile.macros, { type: 'manual', value: adjustment });
         } else if (typeof value === 'number') {
-          // Direct absolute update (legacy fallback)
+          calorieChange = value - oldCalories;
+          deltaStr = `Set to ${value} kcal`;
           nextMacros = { ...profile.macros, dailyCalories: value };
-          deltaStr = `set to ${value} kcal`;
+        } else {
+          return { status: '⚠️ Invalid calorie adjustment value' };
         }
 
-        if (!nextMacros) return '⚠️ Invalid update parameters';
+        const newTargetCalories = typeof value === 'number' ? value : oldCalories + calorieChange;
 
-        // Persist the full updated macro object
-        await setDoc(
-          userRef,
-          { profile: { macros: nextMacros } },
-          { merge: true },
-        );
+        if (newTargetCalories < 1200) {
+          return { status: '⚠️ Cannot lower daily calories below 1200 kcal for health safety.' };
+        }
+
+        await updateDoc(userRef, {
+          dailyCalories: newTargetCalories,
+          'profile.macros': nextMacros
+        });
+
+        // Log for UNDO
+        const logRef = await addDoc(collection(db, 'logs'), {
+          userId,
+          type: 'profile_change',
+          changeType: 'calories',
+          oldValue: oldCalories,
+          newValue: newTargetCalories,
+          oldMacros,
+          newMacros: nextMacros,
+          timestamp: new Date(),
+          date: format(new Date(), 'yyyy-MM-dd'),
+          name: `Goal changed: ${deltaStr}`
+        });
 
         const reasonStr = reason ? ` (${reason})` : '';
-        return `✅ Target ${deltaStr}${reasonStr}. New goal: ${nextMacros.dailyCalories} kcal`;
+        return { 
+          status: `✅ Target ${deltaStr}${reasonStr}`, 
+          id: logRef.id, 
+          type: 'profile_change' 
+        };
       }
 
       case 'update_goal': {
         const goal = action.data.goal;
-        if (!goal || typeof goal !== 'string') {
-          return '⚠️ Invalid goal value';
-        }
+        if (!goal || typeof goal !== 'string') return { status: '⚠️ Invalid goal' };
 
         const userRef = doc(db, 'users', userId);
-        await setDoc(
-          userRef,
-          { profile: { goal } },
-          { merge: true },
-        );
+        const userSnap = await getDoc(userRef);
+        const oldGoal = userSnap.data()?.profile?.goal || 'maintain';
 
-        return `✅ Goal updated to "${goal}"`;
+        await setDoc(userRef, { profile: { goal } }, { merge: true });
+
+        const logRef = await addDoc(collection(db, 'logs'), {
+          userId,
+          type: 'profile_change',
+          changeType: 'goal',
+          oldValue: oldGoal,
+          newValue: goal,
+          timestamp: new Date(),
+          date: format(new Date(), 'yyyy-MM-dd'),
+          name: `Goal updated to ${goal}`
+        });
+
+        return { status: `✅ Goal: ${goal}`, id: logRef.id, type: 'profile_change' };
       }
 
       case 'log_food': {
         const { name, serving } = action.data;
         const calories = Number(action.data.calories);
-        const protein = Number(action.data.protein || 0);
-        const carbs = Number(action.data.carbs || 0);
-        const fat = Number(action.data.fat || 0);
-
-        if (!name || isNaN(calories)) {
-          return '⚠️ Invalid food data';
-        }
-
-        // SEC-03: Validate bounds to prevent AI prompt injection from corrupting data
-        if (calories < 0 || calories > 15000 || protein < 0 || protein > 1000 || carbs < 0 || carbs > 2000 || fat < 0 || fat > 1000) {
-          return '⚠️ Food values out of valid range';
-        }
+        if (!name || isNaN(calories)) return { status: '⚠️ Invalid food' };
 
         const logData = {
           userId,
           type: 'food',
-          name: name || 'AI Logged Food',
-          brand: '',
+          name,
           serving: serving || '1 serving',
           calories: calories || 0,
-          protein: protein || 0,
-          carbs: carbs || 0,
-          fat: fat || 0,
-          timestamp: serverTimestamp(),
+          protein: Number(action.data.protein || 0),
+          carbs: Number(action.data.carbs || 0),
+          fat: Number(action.data.fat || 0),
+          timestamp: new Date(),
           date: action.data.target_date || format(new Date(), 'yyyy-MM-dd'),
         };
 
-        await addDoc(collection(db, 'logs'), logData);
-        return `✅ "${name}" logged (${calories} kcal)${action.data.target_date ? ` for ${action.data.target_date}` : ''}`;
+        const docRef = await addDoc(collection(db, 'logs'), logData);
+        return { status: `✅ Logged: ${name}`, id: docRef.id, type: 'food', data: logData };
       }
 
       case 'log_water': {
         const waterLiters = Number(action.data.waterLiters);
-        if (isNaN(waterLiters) || waterLiters <= 0) {
-          return '⚠️ Invalid water amount';
-        }
+        if (isNaN(waterLiters) || waterLiters <= 0) return { status: '⚠️ Invalid water' };
 
         const logData = {
           userId,
           type: 'water',
           waterLiters,
-          timestamp: serverTimestamp(),
+          timestamp: new Date(),
           date: action.data.target_date || format(new Date(), 'yyyy-MM-dd'),
         };
 
-        await addDoc(collection(db, 'logs'), logData);
-        return `💧 ${Math.round(waterLiters * 1000)}ml water logged`;
+        const docRef = await addDoc(collection(db, 'logs'), logData);
+        return { status: `💧 ${Math.round(waterLiters * 1000)}ml`, id: docRef.id, type: 'water' };
       }
 
       case 'log_exercise': {
         const { name } = action.data;
         const duration = Number(action.data.duration);
-        const calories = Number(action.data.calories || 0);
-        const intensity = action.data.intensity || 'Medium';
-
-        if (!name || isNaN(duration)) {
-          return '⚠️ Invalid exercise data';
-        }
+        if (!name || isNaN(duration)) return { status: '⚠️ Invalid exercise' };
 
         const logData = {
           userId,
           type: 'exercise',
           name,
           duration,
-          intensity,
-          calories: calories || 0,
-          timestamp: serverTimestamp(),
+          intensity: action.data.intensity || 'Medium',
+          calories: Number(action.data.calories || 0),
+          timestamp: new Date(),
           date: action.data.target_date || format(new Date(), 'yyyy-MM-dd'),
         };
 
-        await addDoc(collection(db, 'logs'), logData);
-        return `✅ ${name} logged (${duration} mins)`;
+        const docRef = await addDoc(collection(db, 'logs'), logData);
+        return { status: `✅ Logged: ${name}`, id: docRef.id, type: 'exercise' };
       }
 
       case 'generate_plan': {
-        // Plan generation is informational — the response text IS the plan
-        // No Firestore write needed
-        return '📋 Plan generated';
+        return { status: '📋 Plan generated' };
       }
 
       case 'store_memory': {
-        // Memory storage is handled separately via memory_update field
-        return '🧠 Preferences saved';
+        return { status: '🧠 Preferences saved' };
       }
 
       case 'undo_log': {
-        const { type: filterType, amount: filterAmount } = action.data;
+        const { type: filterType, name: filterName } = action.data;
         
+        // Fetch recent logs to find the best match
         let q = query(
           collection(db, 'logs'), 
           where('userId', '==', userId),
-          limit(20)
+          orderBy('timestamp', 'desc'),
+          limit(30)
         );
 
-        // If AI specified a type, filter by it to be more precise
         if (filterType) {
           q = query(q, where('type', '==', filterType));
         }
 
         const snap = await getDocs(q);
         if (snap.empty) {
-          return `⚠️ No recent ${filterType || 'activity'} logs found to undo.`;
+          return { status: `⚠️ No recent ${filterType || 'activity'} logs found to undo.` };
         }
         
-        // Sort securely in memory to avoid composite index requirements
-        // timestamp might be a Firestore ServerTimestamp, so we check if it exists safely
+        // Sort securely in memory
         const docs = snap.docs.sort((a, b) => {
           const tA = a.data().timestamp?.toMillis?.() || 0;
           const tB = b.data().timestamp?.toMillis?.() || 0;
           return tB - tA;
         });
+
+        let targetDoc = docs[0]; // Default to latest
+
+        // If a name is provided, try to find the best match
+        if (filterName) {
+          const normalizedFilter = filterName.toLowerCase().trim();
+          const match = docs.find(doc => {
+            const name = (doc.data().name || '').toLowerCase();
+            return name.includes(normalizedFilter) || normalizedFilter.includes(name);
+          });
+          
+          if (match) {
+            targetDoc = match;
+          } else {
+            console.warn(`[ChatService] Could not find specific log matching "${filterName}". Defaulting to latest log.`);
+          }
+        }
         
-        const latestDoc = docs[0];
-        const data = latestDoc.data();
+        const data = targetDoc.data();
         
-        await deleteDoc(doc(db, 'logs', latestDoc.id));
+        // Handle special case: Reverting a Profile Change
+        if (data.type === 'profile_change') {
+          const userRef = doc(db, 'users', userId);
+          if (data.changeType === 'calories') {
+            await updateDoc(userRef, {
+              dailyCalories: data.oldValue,
+              'profile.macros': data.oldMacros
+            });
+          } else if (data.changeType === 'goal') {
+            await setDoc(userRef, { profile: { goal: data.oldValue } }, { merge: true });
+          }
+        }
+
+        await deleteDoc(doc(db, 'logs', targetDoc.id));
         
         const itemName = data.name || (data.type === 'water' ? `${data.waterLiters}L water` : 'Activity');
-        return `⏪ Undid log: ${itemName}`;
+        return { status: `⏪ Undid: ${itemName}` };
+      }
+
+      case 'search_food': {
+        // Internal action, no status needed as it triggers agentic re-prompt
+        return { status: '' };
       }
 
       default:
         console.warn('[ChatService] Unknown action type:', action.type);
-        return '';
+        return { status: '' };
     }
   } catch (error) {
     console.error('[ChatService] Action execution failed:', error);
-    return `⚠️ Action failed: ${action.type}`;
+    return { status: `⚠️ Action failed: ${action.type}` };
   }
 }

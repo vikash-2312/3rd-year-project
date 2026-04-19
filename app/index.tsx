@@ -33,8 +33,16 @@ export default function Index() {
         );
 
         console.log('[Index] Routing to:', route);
-        // @ts-ignore
-        router.replace(route);
+        
+        // Final sanity check: never replace '/' with '/' to avoid infinite remount loops
+        if (route !== '/') {
+          // @ts-ignore
+          router.replace(route);
+        } else {
+          console.warn('[Index] Attempted to route to root, falling back to tabs');
+          // @ts-ignore
+          router.replace('/(tabs)');
+        }
 
       } catch (error) {
         console.error("[Index] Error checking status:", error);
@@ -44,7 +52,7 @@ export default function Index() {
     };
 
     checkStatus();
-  }, [user]);
+  }, [user?.id]); // Use ID dependency to prevent loops from user object identity changes
 
   return (
     <View style={styles.loadingContainer}>

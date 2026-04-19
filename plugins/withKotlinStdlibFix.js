@@ -4,13 +4,15 @@ const {
 } = require("expo/config-plugins");
 
 /**
- * Expo Config Plugin: Forces kotlin-stdlib version to match the Kotlin compiler.
+ * Expo Config Plugin: Fixes Kotlin dependency conflicts.
  *
- * Problem: A transitive dependency resolves kotlin-stdlib:2.3.10 (metadata 2.3.0),
- * but the Kotlin compiler is 2.1.21 (reads metadata 2.1.0), causing a build crash.
+ * Root cause: expo-dev-launcher 6.0.20 declares kotlinx-datetime:0.7.1,
+ * which moved Clock/Instant to kotlin.time.* (requires Kotlin 2.1.20+).
+ * Our project uses Kotlin 2.1.0 which doesn't have kotlin.time.Clock.
  *
- * Solution: Inject resolutionStrategy.force into BOTH root and app build.gradle
- * to ensure all configurations pin kotlin-stdlib to the compiler's version.
+ * Fix: Force kotlinx-datetime to 0.6.1 (Clock/Instant still in kotlinx.datetime.*)
+ * Combined with a patch-package patch that changes the imports in
+ * FetchDevelopmentServersButton.kt to use kotlinx.datetime.Clock/Instant.
  */
 const withKotlinStdlibFix = (config) => {
   // 1. Modify the ROOT build.gradle (project-level)
@@ -18,17 +20,24 @@ const withKotlinStdlibFix = (config) => {
     if (config.modResults.language === "groovy") {
       let contents = config.modResults.contents;
 
-      if (!contents.includes("kotlin-stdlib-resolution-fix")) {
+      if (!contents.includes("kotlin-stdlib-fix-v3")) {
         const snippet = `
-// kotlin-stdlib-resolution-fix
-// Force kotlin-stdlib version to match the Kotlin compiler version.
-subprojects {
-    configurations.configureEach {
-        resolutionStrategy.eachDependency { details ->
-            if (details.requested.group == 'org.jetbrains.kotlin' && details.requested.name.startsWith('kotlin-stdlib')) {
-                details.useVersion '2.1.21'
-                details.because 'kotlin-stdlib must match the Kotlin compiler version'
-            }
+// kotlin-stdlib-fix-v3
+// Force kotlinx-datetime to 0.6.1 which still has Clock/Instant in kotlinx.datetime.*
+// Force kotlin-stdlib to match the project's Kotlin compiler version (2.1.0)
+allprojects {
+    configurations.all {
+        resolutionStrategy {
+            force 'org.jetbrains.kotlin:kotlin-stdlib:2.1.0'
+            force 'org.jetbrains.kotlin:kotlin-stdlib-common:2.1.0'
+            force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.1.0'
+            force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.1.0'
+            force 'org.jetbrains.kotlin:kotlin-reflect:2.1.0'
+            force 'org.jetbrains.kotlinx:kotlinx-datetime:0.6.1'
+            force 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3'
+            force 'org.jetbrains.kotlinx:kotlinx-serialization-core:1.7.3'
+            force 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0'
+            force 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
         }
     }
 }
@@ -46,20 +55,15 @@ subprojects {
     if (config.modResults.language === "groovy") {
       let contents = config.modResults.contents;
 
-      if (!contents.includes("kotlin-stdlib-app-fix")) {
+      if (!contents.includes("kotlin-stdlib-app-fix-v3")) {
         const snippet = `
-// kotlin-stdlib-app-fix
-// Force kotlin-stdlib and kotlinx-serialization to versions compatible with Kotlin 2.1.21
-configurations.configureEach {
-    resolutionStrategy.eachDependency { details ->
-        if (details.requested.group == 'org.jetbrains.kotlin' && details.requested.name.startsWith('kotlin-stdlib')) {
-            details.useVersion '2.1.21'
-            details.because 'kotlin-stdlib must match the Kotlin compiler version 2.1.21'
-        }
-        if (details.requested.group == 'org.jetbrains.kotlinx' && details.requested.name.startsWith('kotlinx-serialization')) {
-            details.useVersion '1.7.3'
-            details.because 'kotlinx-serialization must be compatible with Kotlin 2.1.x and @clerk/expo'
-        }
+// kotlin-stdlib-app-fix-v3
+configurations.all {
+    resolutionStrategy {
+        force 'org.jetbrains.kotlin:kotlin-stdlib:2.1.0'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-common:2.1.0'
+        force 'org.jetbrains.kotlin:kotlin-reflect:2.1.0'
+        force 'org.jetbrains.kotlinx:kotlinx-datetime:0.6.1'
     }
 }
 `;
@@ -70,7 +74,6 @@ configurations.configureEach {
       if (!contents.includes("meta-inf-exclusion-fix")) {
         const packagingSnippet = `
 // meta-inf-exclusion-fix
-// Exclude duplicate META-INF files from jspecify and okhttp3 logging-interceptor
 android {
     packagingOptions {
         resources {

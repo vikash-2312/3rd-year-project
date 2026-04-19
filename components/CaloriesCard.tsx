@@ -10,6 +10,8 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { useTheme } from '../lib/ThemeContext';
 import { SegmentedHalfCircleProgress30 } from './Halfprogress';
+import { LinearGradient } from 'expo-linear-gradient';
+import { typography } from '../lib/typography';
 
 type CaloriesCardProps = {
   targetCalories: number;
@@ -49,7 +51,15 @@ export const CaloriesCard = React.memo(({
   };
 
   return (
-    <View style={[styles.cardContainer, { backgroundColor: colors.card }]}>
+    <View style={[styles.cardContainer, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: isDark ? 1 : 0 }]}>
+      {isDark && (
+        <LinearGradient
+          colors={['rgba(255,255,255,0.03)', 'transparent']}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      )}
       <View style={styles.headerRow}>
         <View style={styles.headerLeft}>
           <Text style={[styles.titleText, { color: colors.text }]}>Calories</Text>
@@ -70,8 +80,8 @@ export const CaloriesCard = React.memo(({
 
       <View style={styles.macroRow}>
         <AnimatedMacro index={0}>
-          <View style={[styles.macroBlock, { backgroundColor: isDark ? '#3B1A1A' : '#FFF5F5' }]}>
-            <HugeiconsIcon icon={BeefIcon} size={20} color={isDark ? '#FC8181' : '#E53E3E'} />
+          <View style={[styles.macroBlock, { backgroundColor: isDark ? '#2D1616' : '#FFF5F5' }]}>
+            <HugeiconsIcon icon={BeefIcon} size={20} color={isDark ? '#FF4D4C' : '#E53E3E'} />
             <View style={styles.macroTextContainer}>
               <Text style={[styles.macroValue, { color: isDark ? '#FC8181' : '#E53E3E' }]}>{protein}g</Text>
               <Text style={[styles.subValue, { color: (targetProtein - protein) < 0 ? '#E53E3E' : colors.textTertiary }]}>
@@ -136,8 +146,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   titleText: {
-    fontSize: 18,
-    fontWeight: '700',
+    ...typography.cardTitle,
     color: '#2D3748',
   },
   progressContainer: {
@@ -160,6 +169,8 @@ const styles = StyleSheet.create({
     height: Dimensions.get('window').width < 360 ? 80 : 70,
     flex: 1,
     marginHorizontal: Dimensions.get('window').width < 360 ? 2 : 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   macroTextContainer: {
     marginLeft: Dimensions.get('window').width < 360 ? 0 : 8,
@@ -167,19 +178,17 @@ const styles = StyleSheet.create({
     alignItems: Dimensions.get('window').width < 360 ? 'center' : 'flex-start',
   },
   macroValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
+    ...typography.bodyLarge,
   },
   macroLabel: {
+    ...typography.labelCaps,
     fontSize: 9,
     color: '#718096',
     marginTop: 1,
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
   },
   subValue: {
+    ...typography.captionBold,
     fontSize: 10,
-    fontWeight: '700',
     marginTop: -1,
   }
 });
